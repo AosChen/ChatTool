@@ -1,0 +1,14 @@
+[Unit]
+Description=Your reverse proxy for GPT/Claude
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/opt/your-proxy
+ExecStart=/opt/your-proxy/your-proxy-binary --config /opt/your-proxy/config.yaml
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
