@@ -25,7 +25,7 @@
 
     body {
       margin: 0;
-      min-height: 100vh;
+      height: 100dvh;
       font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
       color: var(--text);
       background:
@@ -33,13 +33,16 @@
         radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 28%),
         linear-gradient(135deg, #efe7da, #dcc9b0);
       padding: 18px;
+      overflow: hidden;
     }
 
     .hidden { display: none !important; }
 
     .auth-gate {
       width: min(520px, 100%);
-      margin: 8vh auto 0;
+      margin: max(32px, 8vh) auto 0;
+      max-height: calc(100dvh - 36px);
+      overflow-y: auto;
       background: var(--surface);
       border: 1px solid var(--line);
       border-radius: 32px;
@@ -134,7 +137,7 @@
 
     .app {
       width: min(1280px, 100%);
-      min-height: calc(100vh - 36px);
+      height: calc(100dvh - 36px);
       margin: 0 auto;
       display: grid;
       grid-template-columns: 300px 1fr;
@@ -372,6 +375,28 @@
       color: var(--accent);
     }
 
+    .message.assistant table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 0.9em;
+      display: block;
+      overflow-x: auto;
+    }
+
+    .message.assistant th,
+    .message.assistant td {
+      border: 1px solid rgba(59, 47, 36, 0.14);
+      padding: 0.55em 0.7em;
+      text-align: left;
+      vertical-align: top;
+      white-space: nowrap;
+    }
+
+    .message.assistant th {
+      background: rgba(15, 118, 110, 0.08);
+      font-weight: 700;
+    }
+
     .typing-indicator {
       display: inline-flex;
       align-items: center;
@@ -457,13 +482,14 @@
     @media (max-width: 920px) {
       body { padding: 0; }
       .app {
-        min-height: 100vh;
+        height: 100dvh;
         border-radius: 0;
         grid-template-columns: 1fr;
       }
       .auth-gate {
         width: 100%;
-        min-height: 100vh;
+        max-height: 100dvh;
+        min-height: 100dvh;
         margin: 0;
         border-radius: 0;
       }
@@ -733,6 +759,54 @@
       return rendered;
     }
 
+    function splitTableRow(line) {
+      let normalized = line.trim();
+      if (normalized.startsWith('|')) {
+        normalized = normalized.slice(1);
+      }
+      if (normalized.endsWith('|')) {
+        normalized = normalized.slice(0, -1);
+      }
+      return normalized.split('|').map((cell) => cell.trim());
+    }
+
+    function isMarkdownTable(lines, index) {
+      if (index + 1 >= lines.length) {
+        return false;
+      }
+      const headerLine = lines[index];
+      const separatorLine = lines[index + 1];
+      if (!headerLine.includes('|') || !separatorLine.includes('|')) {
+        return false;
+      }
+      const cells = splitTableRow(headerLine);
+      if (cells.length < 2) {
+        return false;
+      }
+      return splitTableRow(separatorLine).every((cell) => /^:?-{3,}:?$/.test(cell));
+    }
+
+    function renderTable(lines, index) {
+      const headers = splitTableRow(lines[index]);
+      const rows = [];
+      index += 2;
+
+      while (index < lines.length && lines[index].trim() && lines[index].includes('|')) {
+        rows.push(splitTableRow(lines[index]));
+        index += 1;
+      }
+
+      const headerHtml = headers.map((cell) => `<th>${renderInlineMarkdown(cell)}</th>`).join('');
+      const bodyHtml = rows
+        .map((row) => `<tr>${row.map((cell) => `<td>${renderInlineMarkdown(cell)}</td>`).join('')}</tr>`)
+        .join('');
+
+      return {
+        html: `<table><thead><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table>`,
+        nextIndex: index,
+      };
+    }
+
     function renderMarkdown(markdown) {
       const lines = markdown.replace(/\r\n?/g, '\n').split('\n');
       const blocks = [];
@@ -766,6 +840,13 @@
           const level = headingMatch[1].length;
           blocks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
           index += 1;
+          continue;
+        }
+
+        if (isMarkdownTable(lines, index)) {
+          const table = renderTable(lines, index);
+          blocks.push(table.html);
+          index = table.nextIndex;
           continue;
         }
 
