@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 120.0
     models_cache_seconds: float = 30.0
 
+    database_path: str = "./data/chattool.db"
+    auth_cookie_name: str = "chattool_session"
+    auth_session_days: int = 30
+    auth_cookie_secure: bool = False
+    enable_registration: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -57,6 +63,7 @@ class PublicConfig(BaseModel):
     default_model: str
     proxy_target: Literal["auto", "local", "tailscale"]
     proxy_base_url_candidates: list[str]
+    enable_registration: bool
 
 
 settings = Settings()

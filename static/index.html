@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -7,7 +7,7 @@
   <style>
     :root {
       --bg: #efe7da;
-      --surface: rgba(255, 251, 245, 0.92);
+      --surface: rgba(255, 251, 245, 0.94);
       --surface-strong: #fffdf8;
       --line: rgba(59, 47, 36, 0.12);
       --text: #2e2a26;
@@ -33,6 +33,103 @@
         radial-gradient(circle at bottom right, rgba(15, 118, 110, 0.12), transparent 28%),
         linear-gradient(135deg, #efe7da, #dcc9b0);
       padding: 18px;
+    }
+
+    .hidden { display: none !important; }
+
+    .auth-gate {
+      width: min(520px, 100%);
+      margin: 8vh auto 0;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+      backdrop-filter: blur(18px);
+    }
+
+    .auth-gate h1 {
+      margin: 0 0 8px;
+      font-size: 2rem;
+    }
+
+    .auth-copy,
+    .meta,
+    .status,
+    .session-subtitle {
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .status.error {
+      color: var(--danger);
+    }
+
+    .status.success {
+      color: var(--accent);
+    }
+
+    .auth-form {
+      display: grid;
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .field label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.9rem;
+      font-weight: 700;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      font: inherit;
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,0.94);
+      color: var(--text);
+      padding: 12px 14px;
+    }
+
+    .auth-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 6px;
+    }
+
+    .button,
+    .new-chat,
+    .send,
+    .logout {
+      border: none;
+      border-radius: 16px;
+      padding: 12px 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .button.primary,
+    .new-chat,
+    .send {
+      background: var(--accent);
+      color: white;
+    }
+
+    .button.secondary,
+    .logout {
+      background: rgba(255,255,255,0.78);
+      color: var(--text);
+      border: 1px solid var(--line);
     }
 
     .app {
@@ -64,46 +161,23 @@
       font-size: 1.7rem;
     }
 
-    .brand p,
-    .meta,
-    .session-subtitle,
-    .status {
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    .new-chat {
-      border: none;
-      border-radius: 16px;
-      background: var(--accent);
-      color: white;
-      padding: 12px 14px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    .field label {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 0.9rem;
-      font-weight: 700;
-    }
-
-    select,
-    textarea,
-    button {
-      font: inherit;
-    }
-
-    select,
-    textarea {
-      width: 100%;
+    .account-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.6);
       border: 1px solid var(--line);
-      border-radius: 16px;
-      background: rgba(255,255,255,0.92);
-      color: var(--text);
-      padding: 12px 14px;
+    }
+
+    .account-name {
+      font-weight: 700;
+    }
+
+    .logout {
+      padding: 8px 10px;
     }
 
     .session-list {
@@ -139,18 +213,29 @@
     }
 
     .session-delete {
-      width: 28px;
-      height: 28px;
-      border: none;
+      width: 34px;
+      height: 34px;
+      border: 1px solid rgba(180, 35, 24, 0.16);
       border-radius: 999px;
-      background: transparent;
-      color: var(--muted);
+      background: rgba(255,255,255,0.92);
+      color: #8b5e59;
       cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
     }
 
     .session-delete:hover {
       background: var(--danger-soft);
       color: var(--danger);
+      border-color: rgba(180, 35, 24, 0.28);
+    }
+
+    .session-delete svg {
+      width: 16px;
+      height: 16px;
+      pointer-events: none;
     }
 
     .main {
@@ -215,12 +300,41 @@
       border-bottom-left-radius: 8px;
     }
 
-    .message.error {
-      align-self: center;
-      background: var(--danger-soft);
-      color: var(--danger);
-      border: 1px solid rgba(180, 35, 24, 0.18);
-      max-width: 90%;
+    .message.pending {
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .typing-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .typing-label {
+      color: var(--muted);
+    }
+
+    .typing-dots {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .typing-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: rgba(46, 42, 38, 0.35);
+      animation: typing-bounce 1s infinite ease-in-out;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.15s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.3s;
     }
 
     .composer {
@@ -243,18 +357,14 @@
     }
 
     .send {
-      border: none;
-      border-radius: 18px;
-      background: var(--accent);
-      color: white;
-      padding: 14px 16px;
-      font-weight: 700;
-      cursor: pointer;
       height: 52px;
     }
 
     .send:disabled,
     .new-chat:disabled,
+    .logout:disabled,
+    .button:disabled,
+    input:disabled,
     select:disabled,
     textarea:disabled {
       opacity: 0.7;
@@ -266,12 +376,29 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
+    @keyframes typing-bounce {
+      0%, 80%, 100% {
+        opacity: 0.35;
+        transform: translateY(0) scale(1);
+      }
+      40% {
+        opacity: 1;
+        transform: translateY(-3px) scale(1.05);
+      }
+    }
+
     @media (max-width: 920px) {
       body { padding: 0; }
       .app {
         min-height: 100vh;
         border-radius: 0;
         grid-template-columns: 1fr;
+      }
+      .auth-gate {
+        width: 100%;
+        min-height: 100vh;
+        margin: 0;
+        border-radius: 0;
       }
       .sidebar {
         border-right: none;
@@ -284,7 +411,8 @@
       .message {
         max-width: 92%;
       }
-      .composer-grid {
+      .composer-grid,
+      .auth-actions {
         grid-template-columns: 1fr;
       }
       .send {
@@ -294,11 +422,40 @@
   </style>
 </head>
 <body>
-  <div class="app">
+  <section class="auth-gate" id="authGate">
+    <h1 id="authAppName">ChatTool</h1>
+    <div class="auth-copy">登录后会话保存在服务端。手机和电脑登录同一账号后，会共享同一套聊天记录。</div>
+    <div class="auth-form">
+      <div class="field">
+        <label for="usernameInput">用户名</label>
+        <input id="usernameInput" autocomplete="username" placeholder="输入用户名">
+      </div>
+      <div class="field">
+        <label for="passwordInput">密码</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" placeholder="输入密码">
+      </div>
+      <div class="auth-actions">
+        <button class="button primary" id="loginBtn">登录</button>
+        <button class="button secondary" id="registerBtn">注册</button>
+      </div>
+      <div class="meta" id="authHint">第一次使用可以先注册账号。</div>
+      <div class="status" id="authStatus">准备就绪</div>
+    </div>
+  </section>
+
+  <div class="app hidden" id="chatApp">
     <aside class="sidebar">
       <div class="brand">
         <h1 id="appName">ChatTool</h1>
-        <p>直接读取你的 ghc-api 模型列表，自动选择正确端点。多会话仅保存在当前浏览器。</p>
+        <p>直接读取你的 ghc-api 模型列表，自动选择正确端点。聊天记录保存在服务器。</p>
+      </div>
+
+      <div class="account-bar">
+        <div>
+          <div class="meta">当前用户</div>
+          <div class="account-name" id="accountName">-</div>
+        </div>
+        <button class="logout" id="logoutBtn">退出</button>
       </div>
 
       <button class="new-chat" id="newChatBtn">+ 新建会话</button>
@@ -320,13 +477,13 @@
       <div class="header">
         <div>
           <h2 id="chatTitle">当前会话</h2>
-          <div class="meta" id="chatSubtitle">选择一个模型后开始聊天。</div>
+          <div class="meta" id="chatSubtitle">先创建会话，然后开始聊天。</div>
         </div>
         <div class="meta" id="endpointHint">端点将由后端按模型自动选择。</div>
       </div>
 
       <section class="messages" id="messages">
-        <div class="empty" id="emptyState">先选择模型，然后发送第一条消息。会话标题会按首条消息自动生成。</div>
+        <div class="empty" id="emptyState">先创建会话，然后发送第一条消息。会话标题会按首条消息自动生成。</div>
       </section>
 
       <div class="composer">
@@ -339,18 +496,31 @@
   </div>
 
   <script>
-    const STORAGE_KEY = 'chattool_sessions_v1';
-    const ACTIVE_KEY = 'chattool_active_session_v1';
+    const ACTIVE_KEY = 'chattool_active_session_v2';
 
     const state = {
+      config: null,
+      user: null,
       models: [],
-      activeSessionId: null,
       sessions: [],
+      activeSessionId: localStorage.getItem(ACTIVE_KEY),
       sending: false,
+      pendingMessage: null,
       proxyHint: '端点将由后端按模型自动选择。',
     };
 
+    const authGateEl = document.getElementById('authGate');
+    const chatAppEl = document.getElementById('chatApp');
+    const authAppNameEl = document.getElementById('authAppName');
     const appNameEl = document.getElementById('appName');
+    const authHintEl = document.getElementById('authHint');
+    const authStatusEl = document.getElementById('authStatus');
+    const usernameInputEl = document.getElementById('usernameInput');
+    const passwordInputEl = document.getElementById('passwordInput');
+    const loginBtnEl = document.getElementById('loginBtn');
+    const registerBtnEl = document.getElementById('registerBtn');
+    const logoutBtnEl = document.getElementById('logoutBtn');
+    const accountNameEl = document.getElementById('accountName');
     const modelSelectEl = document.getElementById('modelSelect');
     const modelMetaEl = document.getElementById('modelMeta');
     const statusEl = document.getElementById('status');
@@ -366,30 +536,23 @@
 
     function setStatus(text) {
       statusEl.textContent = text;
+      statusEl.className = 'status';
+    }
+
+    function setAuthStatus(text, kind = 'neutral') {
+      authStatusEl.textContent = text;
+      authStatusEl.className = kind === 'error' ? 'status error' : kind === 'success' ? 'status success' : 'status';
     }
 
     function renderEndpointHint() {
       endpointHintEl.textContent = state.proxyHint;
     }
 
-    function saveSessions() {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.sessions));
+    function persistActiveSessionId() {
       if (state.activeSessionId) {
         localStorage.setItem(ACTIVE_KEY, state.activeSessionId);
       } else {
         localStorage.removeItem(ACTIVE_KEY);
-      }
-    }
-
-    function loadSessions() {
-      try {
-        state.sessions = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-      } catch {
-        state.sessions = [];
-      }
-      state.activeSessionId = localStorage.getItem(ACTIVE_KEY);
-      if (state.activeSessionId && !state.sessions.some((item) => item.id === state.activeSessionId)) {
-        state.activeSessionId = null;
       }
     }
 
@@ -410,50 +573,54 @@
       modelMetaEl.textContent = `${vendor} · 默认端点 ${model.default_endpoint}`;
     }
 
-    function syncModelFromSession() {
-      const session = getActiveSession();
-      if (session && session.model && state.models.some((item) => item.id === session.model)) {
-        modelSelectEl.value = session.model;
-      }
-      setModelMeta(selectedModel());
-    }
-
-    function createSession(initialTitle = '新会话') {
-      const session = {
-        id: crypto.randomUUID(),
-        title: initialTitle,
-        model: modelSelectEl.value || '',
-        messages: [],
-        updatedAt: new Date().toISOString(),
-      };
-      state.sessions.unshift(session);
-      state.activeSessionId = session.id;
-      saveSessions();
-      renderSessionList();
-      renderMessages();
-      return session;
-    }
-
-    function deleteSession(id, event) {
-      if (event) {
-        event.stopPropagation();
-      }
-      state.sessions = state.sessions.filter((item) => item.id !== id);
-      if (state.activeSessionId === id) {
-        state.activeSessionId = state.sessions[0]?.id || null;
-      }
-      saveSessions();
-      renderSessionList();
-      syncModelFromSession();
-      renderMessages();
+    function renderAuthState() {
+      const loggedIn = Boolean(state.user);
+      authGateEl.classList.toggle('hidden', loggedIn);
+      chatAppEl.classList.toggle('hidden', !loggedIn);
+      accountNameEl.textContent = state.user?.username || '-';
+      registerBtnEl.classList.toggle('hidden', !state.config?.enable_registration);
+      authHintEl.textContent = state.config?.enable_registration
+        ? '第一次使用可以先注册账号。'
+        : '当前实例关闭了注册，请使用已有账号登录。';
     }
 
     function setActiveSession(id) {
       state.activeSessionId = id;
-      saveSessions();
-      renderSessionList();
+      persistActiveSessionId();
       syncModelFromSession();
+      renderSessionList();
       renderMessages();
+    }
+
+    function syncModelFromSession() {
+      const session = getActiveSession();
+      if (session && session.model && state.models.some((item) => item.id === session.model)) {
+        modelSelectEl.value = session.model;
+      } else if (state.models.length) {
+        modelSelectEl.value = state.models.some((item) => item.id === state.config?.default_model)
+          ? state.config.default_model
+          : state.models[0].id;
+      }
+      setModelMeta(selectedModel());
+    }
+
+    function upsertSession(session) {
+      const index = state.sessions.findIndex((item) => item.id === session.id);
+      if (index >= 0) {
+        state.sessions[index] = session;
+      } else {
+        state.sessions.unshift(session);
+      }
+      state.sessions.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
+    }
+
+    function renderedMessages(session) {
+      const messages = [...session.messages];
+      if (state.pendingMessage && state.pendingMessage.sessionId === session.id) {
+        messages.push({ role: 'user', content: state.pendingMessage.userText });
+        messages.push({ role: 'assistant', content: '正在思考...', pending: true });
+      }
+      return messages;
     }
 
     function renderSessionList() {
@@ -461,7 +628,7 @@
       if (!state.sessions.length) {
         const div = document.createElement('div');
         div.className = 'session-subtitle';
-        div.textContent = '还没有会话。点击“新建会话”或直接发送消息。';
+        div.textContent = '还没有会话。点击“新建会话”开始。';
         sessionListEl.appendChild(div);
         return;
       }
@@ -483,9 +650,20 @@
 
         const del = document.createElement('button');
         del.className = 'session-delete';
-        del.textContent = '×';
+        del.innerHTML = `
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"></path>
+            <path d="M8 6V4.8C8 3.81 8.81 3 9.8 3h4.4C15.19 3 16 3.81 16 4.8V6"></path>
+            <path d="M18 6v12.2c0 .99-.81 1.8-1.8 1.8H7.8C6.81 20 6 19.19 6 18.2V6"></path>
+            <path d="M10 10v6"></path>
+            <path d="M14 10v6"></path>
+          </svg>
+        `;
         del.title = '删除会话';
-        del.addEventListener('click', (event) => deleteSession(session.id, event));
+        del.addEventListener('click', (event) => {
+          event.stopPropagation();
+          deleteSession(session.id);
+        });
 
         item.appendChild(textWrap);
         item.appendChild(del);
@@ -498,25 +676,39 @@
       const session = getActiveSession();
       if (!session) {
         chatTitleEl.textContent = '当前会话';
-        chatSubtitleEl.textContent = '选择一个模型后开始聊天。';
+        chatSubtitleEl.textContent = '先创建会话，然后开始聊天。';
         renderEndpointHint();
         messagesEl.appendChild(emptyStateEl);
         return;
       }
 
       chatTitleEl.textContent = session.title;
-      chatSubtitleEl.textContent = `${session.model || '未选择模型'} · ${session.messages.length / 2 > 0 ? '持续对话中' : '空会话'}`;
+      const messages = renderedMessages(session);
+      chatSubtitleEl.textContent = `${session.model || '未选择模型'} · ${messages.length ? '持续对话中' : '空会话'}`;
       renderEndpointHint();
 
-      if (!session.messages.length) {
+      if (!messages.length) {
         messagesEl.appendChild(emptyStateEl);
         return;
       }
 
-      for (const message of session.messages) {
+      for (const message of messages) {
         const div = document.createElement('div');
-        div.className = `message ${message.role}`;
-        div.textContent = message.content;
+        div.className = `message ${message.role}${message.pending ? ' pending' : ''}`;
+        if (message.pending) {
+          div.innerHTML = `
+            <span class="typing-indicator">
+              <span class="typing-label">正在思考</span>
+              <span class="typing-dots" aria-hidden="true">
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+                <span class="typing-dot"></span>
+              </span>
+            </span>
+          `;
+        } else {
+          div.textContent = message.content;
+        }
         messagesEl.appendChild(div);
       }
       messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -528,26 +720,101 @@
       promptEl.disabled = sending;
       modelSelectEl.disabled = sending;
       newChatBtnEl.disabled = sending;
+      logoutBtnEl.disabled = sending;
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        credentials: 'same-origin',
+        ...options,
+      });
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+      const payload = isJson ? await response.json() : null;
+
+      if (!response.ok) {
+        const error = new Error(formatErrorDetail(payload?.detail, response.status));
+        error.status = response.status;
+        throw error;
+      }
+
+      return payload;
+    }
+
+    function formatErrorDetail(detail, status) {
+      if (typeof detail === 'string' && detail.trim()) {
+        return detail;
+      }
+      if (Array.isArray(detail)) {
+        const parts = detail
+          .map((item) => {
+            if (typeof item === 'string') {
+              return item;
+            }
+            if (item && typeof item === 'object') {
+              const path = Array.isArray(item.loc) ? item.loc.join('.') : '';
+              const message = typeof item.msg === 'string' ? item.msg : JSON.stringify(item);
+              return path ? `${path}: ${message}` : message;
+            }
+            return String(item);
+          })
+          .filter(Boolean);
+        if (parts.length) {
+          return parts.join('; ');
+        }
+      }
+      if (detail && typeof detail === 'object') {
+        if (typeof detail.message === 'string' && detail.message.trim()) {
+          return detail.message;
+        }
+        try {
+          return JSON.stringify(detail);
+        } catch {
+          return `请求失败 (${status})`;
+        }
+      }
+      return `请求失败 (${status})`;
+    }
+
+    function handleUnauthorized() {
+      state.user = null;
+      state.sessions = [];
+      state.activeSessionId = null;
+      persistActiveSessionId();
+      renderAuthState();
+      renderSessionList();
+      renderMessages();
+      setStatus('请先登录');
+      setAuthStatus('登录状态已失效，请重新登录', 'error');
     }
 
     async function loadConfig() {
-      const response = await fetch('/api/config');
-      const config = await response.json();
+      const config = await api('/api/config');
+      state.config = config;
       appNameEl.textContent = config.app_name;
+      authAppNameEl.textContent = config.app_name;
       const candidates = Array.isArray(config.proxy_base_url_candidates) ? config.proxy_base_url_candidates : [];
       if (candidates.length) {
         state.proxyHint = `上游模式 ${config.proxy_target} · ${candidates.join(' -> ')}`;
       }
       renderEndpointHint();
+      renderAuthState();
+    }
+
+    async function loadCurrentUser() {
+      try {
+        const payload = await api('/api/auth/me');
+        state.user = payload.user;
+      } catch (error) {
+        if (error.status === 401) {
+          state.user = null;
+          return;
+        }
+        throw error;
+      }
     }
 
     async function loadModels() {
-      const response = await fetch('/api/models');
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload.detail || '加载模型失败');
-      }
-
+      const payload = await api('/api/models');
       state.models = payload.data || [];
       modelSelectEl.innerHTML = '';
       if (!state.models.length) {
@@ -566,27 +833,124 @@
         modelSelectEl.appendChild(option);
       }
 
-      const active = getActiveSession();
-      if (active && active.model && state.models.some((item) => item.id === active.model)) {
-        modelSelectEl.value = active.model;
-      } else {
-        modelSelectEl.value = state.models.some((item) => item.id === 'gpt-5.4') ? 'gpt-5.4' : state.models[0].id;
-      }
-      setModelMeta(selectedModel());
+      syncModelFromSession();
     }
 
-    function updateSessionModel() {
+    async function refreshSessions() {
+      const payload = await api('/api/sessions');
+      state.sessions = payload.data || [];
+      if (state.activeSessionId && !state.sessions.some((item) => item.id === state.activeSessionId)) {
+        state.activeSessionId = null;
+      }
+      if (!state.activeSessionId && state.sessions.length) {
+        state.activeSessionId = state.sessions[0].id;
+      }
+      persistActiveSessionId();
+      renderSessionList();
+      syncModelFromSession();
+      renderMessages();
+    }
+
+    async function bootstrapChat() {
+      await loadModels();
+      await refreshSessions();
+      setStatus('准备就绪');
+    }
+
+    async function submitAuth(mode) {
+      const username = usernameInputEl.value.trim();
+      const password = passwordInputEl.value;
+      if (!username || !password) {
+        setAuthStatus('请输入用户名和密码', 'error');
+        return;
+      }
+
+      loginBtnEl.disabled = true;
+      registerBtnEl.disabled = true;
+      setAuthStatus(mode === 'login' ? '正在登录...' : '正在注册...');
+
+      try {
+        const payload = await api(
+          mode === 'login' ? '/api/auth/login' : '/api/auth/register',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          }
+        );
+        state.user = payload.user;
+        usernameInputEl.value = '';
+        passwordInputEl.value = '';
+        renderAuthState();
+        await bootstrapChat();
+        setAuthStatus(mode === 'login' ? '登录成功' : '注册并登录成功', 'success');
+      } catch (error) {
+        setAuthStatus(error.message, 'error');
+      } finally {
+        loginBtnEl.disabled = false;
+        registerBtnEl.disabled = false;
+      }
+    }
+
+    async function createSession() {
+      const payload = await api('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: modelSelectEl.value || state.config.default_model,
+        }),
+      });
+      upsertSession(payload);
+      setActiveSession(payload.id);
+      renderSessionList();
+      renderMessages();
+      return payload;
+    }
+
+    async function deleteSession(id) {
+      try {
+        await api(`/api/sessions/${id}`, { method: 'DELETE' });
+        state.sessions = state.sessions.filter((item) => item.id !== id);
+        if (state.activeSessionId === id) {
+          state.activeSessionId = state.sessions[0]?.id || null;
+        }
+        persistActiveSessionId();
+        renderSessionList();
+        syncModelFromSession();
+        renderMessages();
+        setStatus('会话已删除');
+      } catch (error) {
+        if (error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        setStatus(error.message);
+      }
+    }
+
+    async function updateSessionModel() {
       const session = getActiveSession();
       if (!session) {
         setModelMeta(selectedModel());
         return;
       }
-      session.model = modelSelectEl.value;
-      session.updatedAt = new Date().toISOString();
-      saveSessions();
-      renderSessionList();
-      renderMessages();
-      setModelMeta(selectedModel());
+      try {
+        const payload = await api(`/api/sessions/${session.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model: modelSelectEl.value }),
+        });
+        upsertSession(payload);
+        setModelMeta(selectedModel());
+        renderSessionList();
+        renderMessages();
+      } catch (error) {
+        if (error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        setStatus(error.message);
+      }
     }
 
     async function sendMessage() {
@@ -599,61 +963,86 @@
         return;
       }
 
-      let session = getActiveSession();
-      if (!session) {
-        session = createSession();
-      }
-      if (!session.model) {
-        session.model = modelSelectEl.value;
-      }
-
-      session.messages.push({ role: 'user', content: text });
-      if (session.title === '新会话' && session.messages.length === 1) {
-        session.title = text.slice(0, 24) || '新会话';
-      }
-      session.updatedAt = new Date().toISOString();
-      saveSessions();
-      promptEl.value = '';
-      renderSessionList();
-      renderMessages();
-
       setSending(true);
       setStatus('正在请求 ghc-api...');
 
       try {
-        const response = await fetch('/api/chat', {
+        let session = getActiveSession();
+        if (!session) {
+          session = await createSession();
+        }
+
+        promptEl.value = '';
+        state.pendingMessage = {
+          sessionId: session.id,
+          userText: text,
+        };
+        renderMessages();
+
+        const payload = await api('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: session.model,
-            messages: session.messages.filter((item) => item.role === 'user' || item.role === 'assistant'),
+            session_id: session.id,
+            content: text,
           }),
         });
-        const payload = await response.json();
-        if (!response.ok) {
-          throw new Error(payload.detail || '请求失败');
-        }
 
-        session.messages.push({ role: 'assistant', content: payload.reply });
-        session.updatedAt = new Date().toISOString();
-        saveSessions();
-        renderMessages();
+        state.pendingMessage = null;
+        upsertSession(payload.session);
+        setActiveSession(payload.session.id);
         setStatus(`已连接 ${payload.model} · ${payload.endpoint} · ${payload.upstream}`);
       } catch (error) {
-        session.messages.push({ role: 'error', content: `请求失败：${error.message}` });
-        session.updatedAt = new Date().toISOString();
-        saveSessions();
-        renderMessages();
-        setStatus('请求失败，请检查 ghc-api 是否可访问');
+        state.pendingMessage = null;
+        if (error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        try {
+          await refreshSessions();
+        } catch {
+        }
+        setStatus(error.message);
       } finally {
         setSending(false);
       }
     }
 
-    newChatBtnEl.addEventListener('click', () => {
-      createSession();
-      syncModelFromSession();
-      setStatus('已创建新会话');
+    async function logout() {
+      logoutBtnEl.disabled = true;
+      try {
+        await api('/api/auth/logout', { method: 'POST' });
+      } catch (error) {
+        if (error.status !== 401) {
+          setStatus(error.message);
+        }
+      } finally {
+        state.user = null;
+        state.sessions = [];
+        state.activeSessionId = null;
+        persistActiveSessionId();
+        renderAuthState();
+        renderSessionList();
+        renderMessages();
+        setAuthStatus('已退出', 'success');
+        logoutBtnEl.disabled = false;
+      }
+    }
+
+    loginBtnEl.addEventListener('click', () => submitAuth('login'));
+    registerBtnEl.addEventListener('click', () => submitAuth('register'));
+    logoutBtnEl.addEventListener('click', logout);
+    newChatBtnEl.addEventListener('click', async () => {
+      try {
+        await createSession();
+        setStatus('已创建新会话');
+      } catch (error) {
+        if (error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        setStatus(error.message);
+      }
     });
     modelSelectEl.addEventListener('change', updateSessionModel);
     sendBtnEl.addEventListener('click', sendMessage);
@@ -663,24 +1052,28 @@
         sendMessage();
       }
     });
+    passwordInputEl.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitAuth('login');
+      }
+    });
 
     async function init() {
-      loadSessions();
-      renderSessionList();
-      renderMessages();
       await loadConfig();
-      await loadModels();
-      if (!state.activeSessionId && state.sessions[0]) {
-        state.activeSessionId = state.sessions[0].id;
-        saveSessions();
-        renderSessionList();
-        renderMessages();
+      await loadCurrentUser();
+      renderAuthState();
+
+      if (!state.user) {
+        setStatus('请先登录');
+        return;
       }
-      syncModelFromSession();
-      setStatus('准备就绪');
+
+      await bootstrapChat();
     }
 
     init().catch((error) => {
+      setAuthStatus(`初始化失败：${error.message}`, 'error');
       setStatus(`初始化失败：${error.message}`);
     });
   </script>

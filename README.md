@@ -8,19 +8,12 @@ It reads the proxy model list from `ghc-api` and routes requests to the right up
 - `/v1/chat/completions`
 - `/v1/messages`
 
-Current UI scope:
+Current scope:
 
-- model picker
-- multi-session chat
-- browser-only local persistence
-
-## Current behavior
-
-- model list comes from `http://127.0.0.1:8313/v1/models/full/`
-- `gpt-5` and `o*` models prefer `/v1/responses`
-- `claude*` models prefer `/v1/messages` when supported
-- all other models default to `/v1/chat/completions`
-- UI does not expose provider, temperature, or system prompt
+- username/password login
+- server-side persisted multi-session chat
+- shared sessions across devices for the same account
+- automatic upstream selection for GPT and Claude style models
 
 ## Windows local run
 
@@ -31,11 +24,6 @@ uvicorn app.main:app --host 127.0.0.1 --port 13579 --reload
 ```
 
 Open `http://127.0.0.1:13579`.
-
-Prerequisites:
-
-- `ghc-api` is already running on `http://127.0.0.1:8313`
-- `http://127.0.0.1:8313/v1/models/full/` is reachable
 
 ## Linux deployment
 
@@ -60,8 +48,17 @@ Optional: run it with `systemd`, see `deploy/chattool.service.example`.
 
 If `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` is set explicitly, that explicit value takes precedence.
 
-## Sessions
+## Persistence and auth
 
-- sessions are stored in browser `localStorage`
-- there is no database
-- sessions are lost when you switch browser/device or clear site data
+- chat data is stored in SQLite at `DATABASE_PATH`
+- accounts use username/password auth
+- login state is stored in an HttpOnly cookie
+- the same account can access the same sessions from phone and desktop
+- registration is controlled by `ENABLE_REGISTRATION`
+
+## Default storage layout
+
+- users
+- auth sessions
+- chat sessions
+- chat messages

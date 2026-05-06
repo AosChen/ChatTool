@@ -1,14 +1,51 @@
 from pydantic import BaseModel, Field
 
 
+class UserPublic(BaseModel):
+    id: str
+    username: str
+
+
+class AuthRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=4, max_length=256)
+
+
+class AuthResponse(BaseModel):
+    user: UserPublic
+
+
 class ChatMessage(BaseModel):
     role: str = Field(pattern="^(user|assistant)$")
     content: str = Field(min_length=1)
 
 
+class PersistedSession(BaseModel):
+    id: str
+    title: str
+    model: str
+    created_at: str
+    updated_at: str
+    messages: list[ChatMessage] = Field(default_factory=list)
+
+
+class SessionsResponse(BaseModel):
+    data: list[PersistedSession]
+
+
+class CreateSessionRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    model: str | None = Field(default=None, max_length=120)
+
+
+class UpdateSessionRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    model: str | None = Field(default=None, max_length=120)
+
+
 class ChatRequest(BaseModel):
-    model: str | None = None
-    messages: list[ChatMessage] = Field(min_length=1)
+    session_id: str
+    content: str = Field(min_length=1, max_length=40000)
 
 
 class ChatResponse(BaseModel):
@@ -16,6 +53,7 @@ class ChatResponse(BaseModel):
     endpoint: str
     upstream: str
     reply: str
+    session: PersistedSession
 
 
 class ModelInfo(BaseModel):
