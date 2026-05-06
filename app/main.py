@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
@@ -23,6 +23,8 @@ async def get_config() -> PublicConfig:
     return PublicConfig(
         app_name=settings.app_name,
         default_model=settings.default_model,
+        proxy_target=settings.proxy_target,
+        proxy_base_url_candidates=settings.proxy_base_url_candidates(),
     )
 
 
@@ -34,11 +36,11 @@ async def get_models() -> ModelsResponse:
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
     model = request.model or settings.default_model
-    endpoint, reply = await send_chat(
+    endpoint, upstream, reply = await send_chat(
         model=model,
         messages=request.messages,
     )
-    return ChatResponse(model=model, endpoint=endpoint, reply=reply)
+    return ChatResponse(model=model, endpoint=endpoint, upstream=upstream, reply=reply)
 
 
 @app.get("/")

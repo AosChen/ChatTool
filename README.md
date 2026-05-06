@@ -1,26 +1,28 @@
 # ChatTool
 
-一个针对 `ghc-api` 的轻量聊天前端。它会读取代理的模型列表，并按模型的 `supported_endpoints` 自动选择：
+Lightweight web chat UI for `ghc-api`.
+
+It reads the proxy model list from `ghc-api` and routes requests to the right upstream endpoint automatically:
 
 - `/v1/responses`
 - `/v1/chat/completions`
 - `/v1/messages`
 
-界面只保留必要能力：
+Current UI scope:
 
-- 模型选择
-- 多会话管理
-- 浏览器本地保存会话
+- model picker
+- multi-session chat
+- browser-only local persistence
 
-## 当前行为
+## Current behavior
 
-- 模型列表来自 `http://127.0.0.1:8313/v1/models/full/`
-- `gpt-5` / `o*` 类模型优先走 `/v1/responses`
-- `claude*` 且支持 `/v1/messages` 的模型优先走 `/v1/messages`
-- 其他模型默认走 `/v1/chat/completions`
-- 不再暴露 `provider`、`temperature`、`system prompt` 这些 UI 参数
+- model list comes from `http://127.0.0.1:8313/v1/models/full/`
+- `gpt-5` and `o*` models prefer `/v1/responses`
+- `claude*` models prefer `/v1/messages` when supported
+- all other models default to `/v1/chat/completions`
+- UI does not expose provider, temperature, or system prompt
 
-## Windows 本地测试
+## Windows local run
 
 ```powershell
 python -m pip install -r requirements.txt
@@ -28,16 +30,14 @@ Copy-Item .env.example .env
 uvicorn app.main:app --host 127.0.0.1 --port 13579 --reload
 ```
 
-访问：
+Open `http://127.0.0.1:13579`.
 
-- `http://127.0.0.1:13579`
+Prerequisites:
 
-前提：
+- `ghc-api` is already running on `http://127.0.0.1:8313`
+- `http://127.0.0.1:8313/v1/models/full/` is reachable
 
-- `ghc-api` 已经启动在 `http://127.0.0.1:8313`
-- `http://127.0.0.1:8313/v1/models/full/` 可访问
-
-## Linux 单机部署
+## Linux deployment
 
 ```bash
 cd /opt/chattool
@@ -48,10 +48,20 @@ cp .env.example .env
 uvicorn app.main:app --host 127.0.0.1 --port 13579
 ```
 
-可选：配成 systemd，参考 `deploy/chattool.service.example`。
+Optional: run it with `systemd`, see `deploy/chattool.service.example`.
 
-## 多会话
+## Upstream proxy modes
 
-- 会话保存在浏览器 `localStorage`
-- 不写数据库
-- 换浏览器或清空站点数据后会丢失
+`ChatTool` can talk to `ghc-api` in three deployment modes:
+
+- `PROXY_TARGET=local`: always use `LOCAL_PROXY_BASE_URL`
+- `PROXY_TARGET=tailscale`: always use `TAILSCALE_PROXY_BASE_URL`
+- `PROXY_TARGET=auto`: try local first, then fall back to the Tailscale URL
+
+If `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL` is set explicitly, that explicit value takes precedence.
+
+## Sessions
+
+- sessions are stored in browser `localStorage`
+- there is no database
+- sessions are lost when you switch browser/device or clear site data

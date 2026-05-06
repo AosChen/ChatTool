@@ -347,6 +347,7 @@
       activeSessionId: null,
       sessions: [],
       sending: false,
+      proxyHint: '端点将由后端按模型自动选择。',
     };
 
     const appNameEl = document.getElementById('appName');
@@ -365,6 +366,10 @@
 
     function setStatus(text) {
       statusEl.textContent = text;
+    }
+
+    function renderEndpointHint() {
+      endpointHintEl.textContent = state.proxyHint;
     }
 
     function saveSessions() {
@@ -494,14 +499,14 @@
       if (!session) {
         chatTitleEl.textContent = '当前会话';
         chatSubtitleEl.textContent = '选择一个模型后开始聊天。';
-        endpointHintEl.textContent = '端点将由后端按模型自动选择。';
+        renderEndpointHint();
         messagesEl.appendChild(emptyStateEl);
         return;
       }
 
       chatTitleEl.textContent = session.title;
       chatSubtitleEl.textContent = `${session.model || '未选择模型'} · ${session.messages.length / 2 > 0 ? '持续对话中' : '空会话'}`;
-      endpointHintEl.textContent = '后端会根据 ghc-api 的 supported_endpoints 自动分流。';
+      renderEndpointHint();
 
       if (!session.messages.length) {
         messagesEl.appendChild(emptyStateEl);
@@ -529,6 +534,11 @@
       const response = await fetch('/api/config');
       const config = await response.json();
       appNameEl.textContent = config.app_name;
+      const candidates = Array.isArray(config.proxy_base_url_candidates) ? config.proxy_base_url_candidates : [];
+      if (candidates.length) {
+        state.proxyHint = `上游模式 ${config.proxy_target} · ${candidates.join(' -> ')}`;
+      }
+      renderEndpointHint();
     }
 
     async function loadModels() {
@@ -628,7 +638,7 @@
         session.updatedAt = new Date().toISOString();
         saveSessions();
         renderMessages();
-        setStatus(`已连接 ${payload.model} · ${payload.endpoint}`);
+        setStatus(`已连接 ${payload.model} · ${payload.endpoint} · ${payload.upstream}`);
       } catch (error) {
         session.messages.push({ role: 'error', content: `请求失败：${error.message}` });
         session.updatedAt = new Date().toISOString();

@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 
 
 class ChatMessage(BaseModel):
@@ -14,6 +14,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     model: str
     endpoint: str
+    upstream: str
     reply: str
 
 

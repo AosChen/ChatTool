@@ -11,6 +11,7 @@ from app.models import ChatMessage, ModelInfo
 
 _MODELS_CACHE: list[dict] = []
 _MODELS_CACHE_AT = 0.0
+_MODELS_CACHE_UPSTREAM = ""
 
 
 def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -32,6 +33,10 @@ async def _raise_for_status(response: httpx.Response) -> None:
             status_code=exc.response.status_code,
             detail=f"Upstream proxy error: {detail}",
         ) from exc
+
+
+def _request_error_detail(exc: httpx.RequestError) -> str:
+    return f"{exc.__class__.__name__}: {str(exc).strip() or 'request failed'}"
 
 
 def _normalize_endpoints(supported_endpoints: Sequence[str] | None) -> set[str]:
@@ -69,7 +74,7 @@ def _select_default_endpoint(model_id: str, supported_endpoints: Sequence[str] |
 
 
 async def list_models() -> list[ModelInfo]:
-    raw_models = await _fetch_models()
+    raw_models, _ = await _fetch_models()
     model_infos = [
         ModelInfo(
             id=model.get("id", "unknown"),
@@ -85,17 +90,47 @@ async def list_models() -> list[ModelInfo]:
     return model_infos
 
 
-async def _fetch_models() -> list[dict]:
-    global _MODELS_CACHE, _MODELS_CACHE_AT
+async def _request_with_fallback(
+    client: httpx.AsyncClient,
+    method: str,
+    base_urls: Sequence[str],
+    path: str,
+    *,
+    headers: dict[str, str],
+    json: dict | None = None,
+) -> tuple[httpx.Response, str]:
+    errors: list[str] = []
+    for base_url in base_urls:
+        try:
+            response = await client.request(
+                method,
+                f"{base_url.rstrip('/')}{path}",
+                headers=headers,
+                json=json,
+            )
+        except httpx.RequestError as exc:
+            errors.append(f"{base_url}: {_request_error_detail(exc)}")
+            continue
+        return response, base_url.rstrip("/")
+
+    detail = "; ".join(errors) if errors else "no upstream proxy candidates configured"
+    raise HTTPException(status_code=502, detail=f"Unable to reach upstream proxy: {detail}")
+
+
+async def _fetch_models() -> tuple[list[dict], str]:
+    global _MODELS_CACHE, _MODELS_CACHE_AT, _MODELS_CACHE_UPSTREAM
 
     now = time.time()
     if _MODELS_CACHE and now - _MODELS_CACHE_AT < settings.models_cache_seconds:
-        return _MODELS_CACHE
+        return _MODELS_CACHE, _MODELS_CACHE_UPSTREAM
 
     timeout = httpx.Timeout(settings.request_timeout_seconds)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.get(
-            f"{settings.openai_base_url.rstrip('/')}/v1/models/full/",
+        response, upstream = await _request_with_fallback(
+            client,
+            "GET",
+            settings.endpoint_base_url_candidates("openai"),
+            "/v1/models/full/",
             headers=_headers(),
         )
         await _raise_for_status(response)
@@ -107,37 +142,41 @@ async def _fetch_models() -> list[dict]:
 
     _MODELS_CACHE = models
     _MODELS_CACHE_AT = now
-    return models
+    _MODELS_CACHE_UPSTREAM = upstream
+    return models, upstream
 
 
 async def send_chat(
     model: str,
     messages: Sequence[ChatMessage],
-) -> tuple[str, str]:
-    raw_models = await _fetch_models()
+) -> tuple[str, str, str]:
+    raw_models, _ = await _fetch_models()
     selected = next((item for item in raw_models if item.get("id") == model), None)
     endpoint = _select_default_endpoint(model, selected.get("supported_endpoints") if selected else None)
 
     timeout = httpx.Timeout(settings.request_timeout_seconds)
     async with httpx.AsyncClient(timeout=timeout) as client:
         if endpoint == "/v1/responses":
-            reply = await _send_openai_responses(client, model, messages)
+            upstream, reply = await _send_openai_responses(client, model, messages)
         elif endpoint == "/v1/messages":
-            reply = await _send_anthropic(client, model, messages)
+            upstream, reply = await _send_anthropic(client, model, messages)
         else:
             endpoint = "/v1/chat/completions"
-            reply = await _send_openai_chat_completions(client, model, messages)
-    return endpoint, reply
+            upstream, reply = await _send_openai_chat_completions(client, model, messages)
+    return endpoint, upstream, reply
 
 
 async def _send_openai_chat_completions(
     client: httpx.AsyncClient,
     model: str,
     messages: Sequence[ChatMessage],
-) -> str:
+) -> tuple[str, str]:
     payload_messages = [{"role": message.role, "content": message.content} for message in messages]
-    response = await client.post(
-        f"{settings.openai_base_url.rstrip('/')}/v1/chat/completions",
+    response, upstream = await _request_with_fallback(
+        client,
+        "POST",
+        settings.endpoint_base_url_candidates("openai"),
+        "/v1/chat/completions",
         headers=_headers(),
         json={
             "model": model,
@@ -147,7 +186,7 @@ async def _send_openai_chat_completions(
     await _raise_for_status(response)
     data = response.json()
     try:
-        return data["choices"][0]["message"]["content"]
+        return upstream, data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="Invalid OpenAI chat-completions response from proxy") from exc
 
@@ -156,7 +195,7 @@ async def _send_openai_responses(
     client: httpx.AsyncClient,
     model: str,
     messages: Sequence[ChatMessage],
-) -> str:
+) -> tuple[str, str]:
     input_items = [
         {
             "role": message.role,
@@ -164,8 +203,11 @@ async def _send_openai_responses(
         }
         for message in messages
     ]
-    response = await client.post(
-        f"{settings.openai_base_url.rstrip('/')}/v1/responses",
+    response, upstream = await _request_with_fallback(
+        client,
+        "POST",
+        settings.endpoint_base_url_candidates("openai"),
+        "/v1/responses",
         headers=_headers(),
         json={
             "model": model,
@@ -176,7 +218,7 @@ async def _send_openai_responses(
     data = response.json()
     text = _extract_responses_text(data)
     if text:
-        return text
+        return upstream, text
     raise HTTPException(status_code=502, detail="Invalid OpenAI responses payload from proxy")
 
 
@@ -201,13 +243,16 @@ async def _send_anthropic(
     client: httpx.AsyncClient,
     model: str,
     messages: Sequence[ChatMessage],
-) -> str:
+) -> tuple[str, str]:
     anthropic_messages = [
         {"role": message.role, "content": message.content}
         for message in messages
     ]
-    response = await client.post(
-        f"{settings.anthropic_base_url.rstrip('/')}/v1/messages",
+    response, upstream = await _request_with_fallback(
+        client,
+        "POST",
+        settings.endpoint_base_url_candidates("anthropic"),
+        "/v1/messages",
         headers=_headers({"anthropic-version": "2023-06-01"}),
         json={
             "model": model,
@@ -220,6 +265,6 @@ async def _send_anthropic(
     try:
         parts = data["content"]
         text_parts = [part["text"] for part in parts if part.get("type") == "text"]
-        return "".join(text_parts).strip()
+        return upstream, "".join(text_parts).strip()
     except (KeyError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="Invalid Anthropic response from proxy") from exc
