@@ -479,12 +479,22 @@
       }
     }
 
+    .menu-toggle,
+    .sidebar-close {
+      display: none;
+    }
+
+    .sidebar-backdrop {
+      display: none;
+    }
+
     @media (max-width: 920px) {
       body { padding: 0; }
       .app {
         height: 100dvh;
         border-radius: 0;
         grid-template-columns: 1fr;
+        position: relative;
       }
       .auth-gate {
         width: 100%;
@@ -494,12 +504,82 @@
         border-radius: 0;
       }
       .sidebar {
-        border-right: none;
-        border-bottom: 1px solid var(--line);
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 85vw;
+        max-width: 340px;
+        height: 100dvh;
+        z-index: 100;
+        border-right: 1px solid var(--line);
+        border-bottom: none;
+        border-radius: 0;
+        transform: translateX(-100%);
+        transition: transform 0.25s ease;
+        box-shadow: none;
+      }
+      .sidebar.open {
+        transform: translateX(0);
+        box-shadow: 8px 0 30px rgba(0,0,0,0.15);
+      }
+      .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.35);
+        z-index: 99;
+      }
+      .sidebar-backdrop.open {
+        display: block;
+      }
+      .sidebar-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255,255,255,0.8);
+        cursor: pointer;
+        font-size: 1.2rem;
+        color: var(--muted);
+        padding: 0;
+        flex-shrink: 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .brand p { display: none; }
+      .menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255,255,255,0.8);
+        cursor: pointer;
+        font-size: 1.3rem;
+        color: var(--text);
+        padding: 0;
+        flex-shrink: 0;
       }
       .header {
-        flex-direction: column;
-        align-items: stretch;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+      }
+      .header > div:first-child {
+        flex: 1;
+        min-width: 0;
       }
       .message {
         max-width: 92%;
@@ -537,9 +617,11 @@
   </section>
 
   <div class="app hidden" id="chatApp">
-    <aside class="sidebar">
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+    <aside class="sidebar" id="sidebar">
       <div class="brand">
         <h1 id="appName">ChatTool</h1>
+        <button class="sidebar-close" id="sidebarCloseBtn" title="关闭">&times;</button>
         <p>直接读取你的 ghc-api 模型列表，自动选择正确端点。聊天记录保存在服务器。</p>
       </div>
 
@@ -568,6 +650,7 @@
 
     <main class="main">
       <div class="header">
+        <button class="menu-toggle" id="menuToggleBtn" title="菜单">&#9776;</button>
         <div>
           <h2 id="chatTitle">当前会话</h2>
           <div class="meta" id="chatSubtitle">先创建会话，然后开始聊天。</div>
@@ -626,6 +709,10 @@
     const promptEl = document.getElementById('prompt');
     const sendBtnEl = document.getElementById('sendBtn');
     const newChatBtnEl = document.getElementById('newChatBtn');
+    const sidebarEl = document.getElementById('sidebar');
+    const sidebarBackdropEl = document.getElementById('sidebarBackdrop');
+    const menuToggleBtnEl = document.getElementById('menuToggleBtn');
+    const sidebarCloseBtnEl = document.getElementById('sidebarCloseBtn');
 
     function setStatus(text) {
       statusEl.textContent = text;
@@ -677,12 +764,23 @@
         : '当前实例关闭了注册，请使用已有账号登录。';
     }
 
+    function openSidebar() {
+      sidebarEl.classList.add('open');
+      sidebarBackdropEl.classList.add('open');
+    }
+
+    function closeSidebar() {
+      sidebarEl.classList.remove('open');
+      sidebarBackdropEl.classList.remove('open');
+    }
+
     function setActiveSession(id) {
       state.activeSessionId = id;
       persistActiveSessionId();
       syncModelFromSession();
       renderSessionList();
       renderMessages();
+      closeSidebar();
     }
 
     function syncModelFromSession() {
@@ -1308,6 +1406,9 @@
       }
     }
 
+    menuToggleBtnEl.addEventListener('click', openSidebar);
+    sidebarCloseBtnEl.addEventListener('click', closeSidebar);
+    sidebarBackdropEl.addEventListener('click', closeSidebar);
     loginBtnEl.addEventListener('click', () => submitAuth('login'));
     registerBtnEl.addEventListener('click', () => submitAuth('register'));
     logoutBtnEl.addEventListener('click', logout);
