@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import os
 import secrets
 import sqlite3
 import uuid
@@ -9,9 +11,32 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import HTTPException
 
 from app.models import ChatMessage, PersistedSession, UserPublic
+
+_ENC_PREFIX = "ENC:"
+
+
+def _derive_aes_key(secret: str) -> bytes:
+    return hashlib.sha256(secret.encode("utf-8")).digest()
+
+
+def _encrypt(plaintext: str, key: bytes) -> str:
+    nonce = os.urandom(12)
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode("utf-8"), None)
+    return _ENC_PREFIX + base64.b64encode(nonce + ciphertext).decode("ascii")
+
+
+def _decrypt(stored: str, key: bytes | None) -> str:
+    if not stored.startswith(_ENC_PREFIX):
+        return stored
+    if key is None:
+        return stored
+    raw = base64.b64decode(stored[len(_ENC_PREFIX):])
+    nonce, ciphertext = raw[:12], raw[12:]
+    return AESGCM(key).decrypt(nonce, ciphertext, None).decode("utf-8")
 
 
 def utc_now() -> datetime:
@@ -23,8 +48,9 @@ def utc_now_iso() -> str:
 
 
 class ChatStorage:
-    def __init__(self, database_path: str) -> None:
+    def __init__(self, database_path: str, encryption_key: str | None = None) -> None:
         self.database_path = Path(database_path)
+        self._aes_key = _derive_aes_key(encryption_key) if encryption_key else None
 
     @contextmanager
     def connect(self) -> sqlite3.Connection:
@@ -113,7 +139,7 @@ class ChatStorage:
             created_at=session_row["created_at"],
             updated_at=session_row["updated_at"],
             messages=[
-                ChatMessage(role=row["role"], content=row["content"])
+                ChatMessage(role=row["role"], content=_decrypt(row["content"], self._aes_key))
                 for row in message_rows
             ],
         )
@@ -322,6 +348,7 @@ class ChatStorage:
 
     def append_message(self, user_id: str, session_id: str, role: str, content: str) -> PersistedSession:
         now = utc_now_iso()
+        stored_content = _encrypt(content, self._aes_key) if self._aes_key else content
         with self.connect() as connection:
             session_row = connection.execute(
                 "SELECT id FROM chat_sessions WHERE id = ? AND user_id = ?",
@@ -335,7 +362,7 @@ class ChatStorage:
                 INSERT INTO chat_messages (session_id, role, content, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (session_id, role, content, now),
+                (session_id, role, stored_content, now),
             )
             connection.execute(
                 """
@@ -353,11 +380,11 @@ class ChatStorage:
 storage: ChatStorage | None = None
 
 
-def get_storage(database_path: str | None = None) -> ChatStorage:
+def get_storage(database_path: str | None = None, encryption_key: str | None = None) -> ChatStorage:
     global storage
     if storage is None:
         if database_path is None:
             raise RuntimeError("Storage is not initialized")
-        storage = ChatStorage(database_path)
+        storage = ChatStorage(database_path, encryption_key)
         storage.initialize()
     return storage

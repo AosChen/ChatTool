@@ -26,7 +26,7 @@ app = FastAPI(title=settings.app_name)
 
 
 def storage_dep() -> ChatStorage:
-    return get_storage(settings.database_path)
+    return get_storage(settings.database_path, settings.message_encryption_key)
 
 
 def set_auth_cookie(response: Response, auth_session_id: str) -> None:
@@ -66,7 +66,7 @@ def require_current_user(user: UserPublic | None = Depends(current_user_optional
 
 @app.on_event("startup")
 def startup() -> None:
-    get_storage(settings.database_path)
+    get_storage(settings.database_path, settings.message_encryption_key)
 
 
 @app.get("/api/health")

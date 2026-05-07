@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 120.0
     models_cache_seconds: float = 30.0
 
+    message_encryption_key: str | None = None
+
     database_path: str = "./data/chattool.db"
     auth_cookie_name: str = "chattool_session"
     auth_session_days: int = 30
