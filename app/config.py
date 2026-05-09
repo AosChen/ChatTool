@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     enable_tool_test_loop: bool = True
     tool_loop_max_iterations: int = 8
 
+    mcp_servers_config_path: str = "./mcp_servers.json"
+    brave_api_key: str | None = None
+    tavily_api_key: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

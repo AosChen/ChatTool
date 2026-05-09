@@ -9,6 +9,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.config import settings
+from app.mcp_client import get_registry
 from app.models import ChatMessage, ModelInfo
 
 logger = logging.getLogger(__name__)
@@ -291,6 +292,9 @@ async def _send_anthropic(
             }
         )
 
+    mcp_registry = get_registry()
+    tools.extend(mcp_registry.anthropic_tools())
+
     upstream_used = ""
     for iteration in range(max(1, settings.tool_loop_max_iterations)):
         payload: dict = {
@@ -329,7 +333,10 @@ async def _send_anthropic(
                 tool_name = block.get("name", "")
                 tool_input = block.get("input") or {}
                 logger.info("Tool call from model: %s input=%s", tool_name, tool_input)
-                result_text = _execute_local_tool(tool_name, tool_input)
+                if mcp_registry.has_tool(tool_name):
+                    result_text = await mcp_registry.call_tool(tool_name, tool_input)
+                else:
+                    result_text = _execute_local_tool(tool_name, tool_input)
                 tool_results.append(
                     {
                         "type": "tool_result",

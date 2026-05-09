@@ -1,7 +1,14 @@
 from pathlib import Path
+import logging
+import os
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
 from fastapi.responses import FileResponse
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 from app.config import PublicConfig, settings
 from app.models import (
@@ -18,6 +25,7 @@ from app.models import (
 )
 from app.providers import list_models, send_chat
 from app.storage import ChatStorage, get_storage
+from app.mcp_client import get_registry
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -65,8 +73,18 @@ def require_current_user(user: UserPublic | None = Depends(current_user_optional
 
 
 @app.on_event("startup")
-def startup() -> None:
+async def startup() -> None:
     get_storage(settings.database_path, settings.message_encryption_key)
+    if settings.brave_api_key:
+        os.environ.setdefault("BRAVE_API_KEY", settings.brave_api_key)
+    if settings.tavily_api_key:
+        os.environ.setdefault("TAVILY_API_KEY", settings.tavily_api_key)
+    await get_registry().startup(settings.mcp_servers_config_path)
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    await get_registry().shutdown()
 
 
 @app.get("/api/health")
