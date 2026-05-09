@@ -194,10 +194,6 @@ async def chat(
     session = storage.get_session(user.id, request.session_id)
     session = storage.append_message(user.id, session.id, "user", request.content.strip())
 
-    if len(session.messages) == 1 and session.title == "新会话":
-        next_title = request.content.strip()[:24] or "新会话"
-        session = storage.update_session(user.id, session.id, title=next_title)
-
     model = session.model or settings.default_model
     endpoint, upstream, reply = await send_chat(
         model=model,
