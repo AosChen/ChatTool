@@ -174,7 +174,8 @@ async def create_session(
 ) -> PersistedSession:
     title = (request.title or "新会话").strip() or "新会话"
     model = (request.model or settings.default_model).strip() or settings.default_model
-    return storage.create_session(user.id, title, model)
+    tools_enabled = True if request.tools_enabled is None else request.tools_enabled
+    return storage.create_session(user.id, title, model, tools_enabled=tools_enabled)
 
 
 @app.patch("/api/sessions/{session_id}", response_model=PersistedSession)
@@ -190,7 +191,13 @@ async def update_session(
         title = "新会话"
     if model == "":
         model = settings.default_model
-    return storage.update_session(user.id, session_id, title=title, model=model)
+    return storage.update_session(
+        user.id,
+        session_id,
+        title=title,
+        model=model,
+        tools_enabled=request.tools_enabled,
+    )
 
 
 @app.delete("/api/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -216,6 +223,7 @@ async def chat(
     endpoint, upstream, reply = await send_chat(
         model=model,
         messages=session.messages,
+        tools_enabled=session.tools_enabled,
     )
     session = storage.append_message(user.id, session.id, "assistant", reply)
     return ChatResponse(

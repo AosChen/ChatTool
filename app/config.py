@@ -28,10 +28,7 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     enable_registration: bool = True
 
-    enable_web_search: bool = False
-    web_search_max_uses: int = 5
-
-    enable_tool_test_loop: bool = True
+    enable_local_tools: bool = True
     tool_loop_max_iterations: int = 8
 
     mcp_servers_config_path: str = "./mcp_servers.json"

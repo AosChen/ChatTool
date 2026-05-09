@@ -92,6 +92,7 @@ class ChatStorage:
                     model TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    tools_enabled INTEGER NOT NULL DEFAULT 1,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 );
 
@@ -114,6 +115,16 @@ class ChatStorage:
                     ON chat_messages(session_id, id ASC);
                 """
             )
+
+            existing_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(chat_sessions)").fetchall()
+            }
+            if "tools_enabled" not in existing_columns:
+                connection.execute(
+                    "ALTER TABLE chat_sessions ADD COLUMN tools_enabled INTEGER NOT NULL DEFAULT 1"
+                )
+
             connection.commit()
 
     def _normalize_username(self, username: str) -> str:
@@ -138,6 +149,7 @@ class ChatStorage:
             model=session_row["model"],
             created_at=session_row["created_at"],
             updated_at=session_row["updated_at"],
+            tools_enabled=bool(session_row["tools_enabled"]),
             messages=[
                 ChatMessage(role=row["role"], content=_decrypt(row["content"], self._aes_key))
                 for row in message_rows
@@ -233,7 +245,7 @@ class ChatStorage:
         with self.connect() as connection:
             session_rows = connection.execute(
                 """
-                SELECT id, title, model, created_at, updated_at
+                SELECT id, title, model, created_at, updated_at, tools_enabled
                 FROM chat_sessions
                 WHERE user_id = ?
                 ORDER BY updated_at DESC, created_at DESC
@@ -265,7 +277,7 @@ class ChatStorage:
         with self.connect() as connection:
             session_row = connection.execute(
                 """
-                SELECT id, title, model, created_at, updated_at
+                SELECT id, title, model, created_at, updated_at, tools_enabled
                 FROM chat_sessions
                 WHERE id = ? AND user_id = ?
                 """,
@@ -286,16 +298,16 @@ class ChatStorage:
 
         return self._session_from_row(session_row, message_rows)
 
-    def create_session(self, user_id: str, title: str, model: str) -> PersistedSession:
+    def create_session(self, user_id: str, title: str, model: str, tools_enabled: bool = True) -> PersistedSession:
         session_id = str(uuid.uuid4())
         now = utc_now_iso()
         with self.connect() as connection:
             connection.execute(
                 """
-                INSERT INTO chat_sessions (id, user_id, title, model, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO chat_sessions (id, user_id, title, model, created_at, updated_at, tools_enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (session_id, user_id, title, model, now, now),
+                (session_id, user_id, title, model, now, now, 1 if tools_enabled else 0),
             )
             connection.commit()
 
@@ -305,6 +317,7 @@ class ChatStorage:
             model=model,
             created_at=now,
             updated_at=now,
+            tools_enabled=tools_enabled,
             messages=[],
         )
 
@@ -315,20 +328,22 @@ class ChatStorage:
         *,
         title: str | None = None,
         model: str | None = None,
+        tools_enabled: bool | None = None,
     ) -> PersistedSession:
         current = self.get_session(user_id, session_id)
         next_title = current.title if title is None else title
         next_model = current.model if model is None else model
+        next_tools_enabled = current.tools_enabled if tools_enabled is None else tools_enabled
         now = utc_now_iso()
 
         with self.connect() as connection:
             result = connection.execute(
                 """
                 UPDATE chat_sessions
-                SET title = ?, model = ?, updated_at = ?
+                SET title = ?, model = ?, tools_enabled = ?, updated_at = ?
                 WHERE id = ? AND user_id = ?
                 """,
-                (next_title, next_model, now, session_id, user_id),
+                (next_title, next_model, 1 if next_tools_enabled else 0, now, session_id, user_id),
             )
             if result.rowcount == 0:
                 raise HTTPException(status_code=404, detail="Session not found")

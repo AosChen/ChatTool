@@ -26,6 +26,7 @@ class PersistedSession(BaseModel):
     model: str
     created_at: str
     updated_at: str
+    tools_enabled: bool = True
     messages: list[ChatMessage] = Field(default_factory=list)
 
 
@@ -36,11 +37,13 @@ class SessionsResponse(BaseModel):
 class CreateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
+    tools_enabled: bool | None = None
 
 
 class UpdateSessionRequest(BaseModel):
     title: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
+    tools_enabled: bool | None = None
 
 
 class ChatRequest(BaseModel):

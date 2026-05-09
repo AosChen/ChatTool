@@ -19,7 +19,7 @@ _MODELS_CACHE_AT = 0.0
 _MODELS_CACHE_UPSTREAM = ""
 
 
-_TEST_TOOL_DEFINITIONS = [
+_LOCAL_TOOL_DEFINITIONS = [
     {
         "name": "get_current_time",
         "description": (
@@ -177,6 +177,7 @@ async def _fetch_models() -> tuple[list[dict], str]:
 async def send_chat(
     model: str,
     messages: Sequence[ChatMessage],
+    tools_enabled: bool = True,
 ) -> tuple[str, str, str]:
     raw_models, _ = await _fetch_models()
     selected = next((item for item in raw_models if item.get("id") == model), None)
@@ -187,7 +188,7 @@ async def send_chat(
         if endpoint == "/v1/responses":
             upstream, reply = await _send_openai_responses(client, model, messages)
         elif endpoint == "/v1/messages":
-            upstream, reply = await _send_anthropic(client, model, messages)
+            upstream, reply = await _send_anthropic(client, model, messages, tools_enabled=tools_enabled)
         else:
             endpoint = "/v1/chat/completions"
             upstream, reply = await _send_openai_chat_completions(client, model, messages)
@@ -274,6 +275,7 @@ async def _send_anthropic(
     client: httpx.AsyncClient,
     model: str,
     messages: Sequence[ChatMessage],
+    tools_enabled: bool = True,
 ) -> tuple[str, str]:
     anthropic_messages: list[dict] = [
         {"role": message.role, "content": message.content}
@@ -281,19 +283,11 @@ async def _send_anthropic(
     ]
 
     tools: list[dict] = []
-    if settings.enable_tool_test_loop:
-        tools.extend(_TEST_TOOL_DEFINITIONS)
-    if settings.enable_web_search:
-        tools.append(
-            {
-                "type": "web_search_20250305",
-                "name": "web_search",
-                "max_uses": settings.web_search_max_uses,
-            }
-        )
-
     mcp_registry = get_registry()
-    tools.extend(mcp_registry.anthropic_tools())
+    if tools_enabled:
+        if settings.enable_local_tools:
+            tools.extend(_LOCAL_TOOL_DEFINITIONS)
+        tools.extend(mcp_registry.anthropic_tools())
 
     upstream_used = ""
     for iteration in range(max(1, settings.tool_loop_max_iterations)):

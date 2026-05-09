@@ -192,6 +192,23 @@
       padding-right: 4px;
     }
 
+    .tools-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 6px 0;
+      user-select: none;
+    }
+
+    .tools-toggle input {
+      width: auto;
+      margin: 0;
+      cursor: pointer;
+    }
+
     .session-item {
       display: grid;
       grid-template-columns: 1fr auto auto;
@@ -674,6 +691,12 @@
       </div>
 
       <div class="meta" id="modelMeta">尚未加载模型信息</div>
+
+      <label class="tools-toggle">
+        <input type="checkbox" id="toolsToggle">
+        <span>启用联网/工具（搜索、抓网页等）</span>
+      </label>
+
       <div class="status" id="status">准备就绪</div>
 
       <div class="session-list" id="sessionList"></div>
@@ -730,6 +753,7 @@
     const accountNameEl = document.getElementById('accountName');
     const modelSelectEl = document.getElementById('modelSelect');
     const modelMetaEl = document.getElementById('modelMeta');
+    const toolsToggleEl = document.getElementById('toolsToggle');
     const statusEl = document.getElementById('status');
     const sessionListEl = document.getElementById('sessionList');
     const chatTitleEl = document.getElementById('chatTitle');
@@ -824,6 +848,18 @@
           : state.models[0].id;
       }
       setModelMeta(selectedModel());
+      syncToolsToggleFromSession();
+    }
+
+    function syncToolsToggleFromSession() {
+      const session = getActiveSession();
+      if (session) {
+        toolsToggleEl.checked = session.tools_enabled !== false;
+        toolsToggleEl.disabled = false;
+      } else {
+        toolsToggleEl.checked = true;
+        toolsToggleEl.disabled = true;
+      }
     }
 
     function upsertSession(session) {
@@ -1142,6 +1178,7 @@
       sendBtnEl.disabled = sending;
       promptEl.disabled = sending;
       modelSelectEl.disabled = sending;
+      toolsToggleEl.disabled = sending || !getActiveSession();
       newChatBtnEl.disabled = sending;
       logoutBtnEl.disabled = sending;
     }
@@ -1400,6 +1437,31 @@
       }
     }
 
+    async function updateSessionToolsEnabled() {
+      const session = getActiveSession();
+      if (!session) {
+        syncToolsToggleFromSession();
+        return;
+      }
+      const next = toolsToggleEl.checked;
+      try {
+        const payload = await api(`/api/sessions/${session.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tools_enabled: next }),
+        });
+        upsertSession(payload);
+        setStatus(next ? '已启用工具' : '已切换为纯聊天模式');
+      } catch (error) {
+        if (error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        setStatus(error.message);
+        toolsToggleEl.checked = !next;
+      }
+    }
+
     async function sendMessage() {
       const text = promptEl.value.trim();
       if (!text || state.sending) {
@@ -1495,6 +1557,7 @@
       }
     });
     modelSelectEl.addEventListener('change', updateSessionModel);
+    toolsToggleEl.addEventListener('change', updateSessionToolsEnabled);
     sendBtnEl.addEventListener('click', sendMessage);
     promptEl.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
