@@ -28,8 +28,11 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     enable_registration: bool = True
 
-    enable_web_search: bool = True
+    enable_web_search: bool = False
     web_search_max_uses: int = 5
+
+    enable_tool_test_loop: bool = True
+    tool_loop_max_iterations: int = 8
 
     model_config = SettingsConfigDict(
         env_file=".env",

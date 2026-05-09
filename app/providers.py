@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Sequence
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import HTTPException
@@ -9,9 +11,34 @@ from fastapi import HTTPException
 from app.config import settings
 from app.models import ChatMessage, ModelInfo
 
+logger = logging.getLogger(__name__)
+
 _MODELS_CACHE: list[dict] = []
 _MODELS_CACHE_AT = 0.0
 _MODELS_CACHE_UPSTREAM = ""
+
+
+_TEST_TOOL_DEFINITIONS = [
+    {
+        "name": "get_current_time",
+        "description": (
+            "Returns the current server date and time in ISO 8601 format (UTC). "
+            "Use this whenever the user asks about the current time, today's date, "
+            "or anything that depends on knowing 'now'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    }
+]
+
+
+def _execute_local_tool(name: str, tool_input: dict) -> str:
+    if name == "get_current_time":
+        return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return f"[Tool '{name}' is not implemented in ChatTool]"
 
 
 def _headers(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -247,36 +274,76 @@ async def _send_anthropic(
     model: str,
     messages: Sequence[ChatMessage],
 ) -> tuple[str, str]:
-    anthropic_messages = [
+    anthropic_messages: list[dict] = [
         {"role": message.role, "content": message.content}
         for message in messages
     ]
-    payload: dict = {
-        "model": model,
-        "messages": anthropic_messages,
-        "max_tokens": 4096,
-    }
+
+    tools: list[dict] = []
+    if settings.enable_tool_test_loop:
+        tools.extend(_TEST_TOOL_DEFINITIONS)
     if settings.enable_web_search:
-        payload["tools"] = [
+        tools.append(
             {
                 "type": "web_search_20250305",
                 "name": "web_search",
                 "max_uses": settings.web_search_max_uses,
             }
-        ]
-    response, upstream = await _request_with_fallback(
-        client,
-        "POST",
-        settings.endpoint_base_url_candidates("anthropic"),
-        "/v1/messages",
-        headers=_headers({"anthropic-version": "2023-06-01"}),
-        json=payload,
+        )
+
+    upstream_used = ""
+    for iteration in range(max(1, settings.tool_loop_max_iterations)):
+        payload: dict = {
+            "model": model,
+            "messages": anthropic_messages,
+            "max_tokens": 4096,
+        }
+        if tools:
+            payload["tools"] = tools
+
+        response, upstream = await _request_with_fallback(
+            client,
+            "POST",
+            settings.endpoint_base_url_candidates("anthropic"),
+            "/v1/messages",
+            headers=_headers({"anthropic-version": "2023-06-01"}),
+            json=payload,
+        )
+        upstream_used = upstream
+        await _raise_for_status(response)
+        data = response.json()
+
+        try:
+            content_blocks = data["content"]
+        except (KeyError, TypeError) as exc:
+            raise HTTPException(status_code=502, detail="Invalid Anthropic response from proxy") from exc
+
+        stop_reason = data.get("stop_reason")
+        tool_use_blocks = [block for block in content_blocks if block.get("type") == "tool_use"]
+
+        if stop_reason == "tool_use" and tool_use_blocks:
+            anthropic_messages.append({"role": "assistant", "content": content_blocks})
+
+            tool_results: list[dict] = []
+            for block in tool_use_blocks:
+                tool_name = block.get("name", "")
+                tool_input = block.get("input") or {}
+                logger.info("Tool call from model: %s input=%s", tool_name, tool_input)
+                result_text = _execute_local_tool(tool_name, tool_input)
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.get("id"),
+                        "content": result_text,
+                    }
+                )
+            anthropic_messages.append({"role": "user", "content": tool_results})
+            continue
+
+        text_parts = [block["text"] for block in content_blocks if block.get("type") == "text"]
+        return upstream_used, "".join(text_parts).strip()
+
+    raise HTTPException(
+        status_code=502,
+        detail=f"Tool-use loop did not converge within {settings.tool_loop_max_iterations} iterations",
     )
-    await _raise_for_status(response)
-    data = response.json()
-    try:
-        parts = data["content"]
-        text_parts = [part["text"] for part in parts if part.get("type") == "text"]
-        return upstream, "".join(text_parts).strip()
-    except (KeyError, TypeError) as exc:
-        raise HTTPException(status_code=502, detail="Invalid Anthropic response from proxy") from exc
