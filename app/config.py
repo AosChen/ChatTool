@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     auth_cookie_secure: bool = False
     enable_registration: bool = True
 
+    enable_web_search: bool = True
+    web_search_max_uses: int = 5
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

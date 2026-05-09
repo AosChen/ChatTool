@@ -203,16 +203,19 @@ async def _send_openai_responses(
         }
         for message in messages
     ]
+    payload: dict = {
+        "model": model,
+        "input": input_items,
+    }
+    if settings.enable_web_search:
+        payload["tools"] = [{"type": "web_search"}]
     response, upstream = await _request_with_fallback(
         client,
         "POST",
         settings.endpoint_base_url_candidates("openai"),
         "/v1/responses",
         headers=_headers(),
-        json={
-            "model": model,
-            "input": input_items,
-        },
+        json=payload,
     )
     await _raise_for_status(response)
     data = response.json()
@@ -248,17 +251,26 @@ async def _send_anthropic(
         {"role": message.role, "content": message.content}
         for message in messages
     ]
+    payload: dict = {
+        "model": model,
+        "messages": anthropic_messages,
+        "max_tokens": 4096,
+    }
+    if settings.enable_web_search:
+        payload["tools"] = [
+            {
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": settings.web_search_max_uses,
+            }
+        ]
     response, upstream = await _request_with_fallback(
         client,
         "POST",
         settings.endpoint_base_url_candidates("anthropic"),
         "/v1/messages",
         headers=_headers({"anthropic-version": "2023-06-01"}),
-        json={
-            "model": model,
-            "messages": anthropic_messages,
-            "max_tokens": 4096,
-        },
+        json=payload,
     )
     await _raise_for_status(response)
     data = response.json()
