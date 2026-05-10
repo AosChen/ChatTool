@@ -48,7 +48,6 @@
       border-radius: 32px;
       box-shadow: var(--shadow);
       padding: 28px;
-      backdrop-filter: blur(18px);
     }
 
     .auth-gate h1 {
@@ -146,7 +145,6 @@
       border-radius: 32px;
       box-shadow: var(--shadow);
       overflow: hidden;
-      backdrop-filter: blur(18px);
     }
 
     .sidebar {
@@ -328,7 +326,6 @@
       padding: 15px 18px;
       line-height: 1.65;
       word-break: break-word;
-      animation: rise 0.2s ease;
     }
 
     .message.user {
@@ -504,11 +501,6 @@
     textarea:disabled {
       opacity: 0.7;
       cursor: not-allowed;
-    }
-
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
     }
 
     @keyframes typing-bounce {
