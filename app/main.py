@@ -21,6 +21,7 @@ from app.models import (
     ModelsResponse,
     PersistedSession,
     SessionsResponse,
+    TokenUsage,
     UpdateSessionRequest,
     UserPublic,
 )
@@ -230,7 +231,7 @@ async def chat(
     session = storage.append_message(user.id, session.id, "user", request.content.strip())
 
     model = session.model or settings.default_model
-    endpoint, upstream, reply = await send_chat(
+    endpoint, upstream, reply, usage = await send_chat(
         model=model,
         messages=session.messages,
         tools_enabled=session.tools_enabled,
@@ -242,6 +243,7 @@ async def chat(
         upstream=upstream,
         reply=reply,
         session=session,
+        usage=TokenUsage(**usage),
     )
 
 

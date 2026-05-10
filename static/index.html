@@ -726,6 +726,7 @@
       models: [],
       sessions: [],
       messagesBySession: {},
+      usageBySession: {},
       loadingMessagesFor: null,
       activeSessionId: localStorage.getItem(ACTIVE_KEY),
       sending: false,
@@ -1185,7 +1186,11 @@
         messagesEl.appendChild(loading);
         return;
       }
-      chatSubtitleEl.textContent = `${session.model || '未选择模型'} · ${messages.length ? '持续对话中' : '空会话'}`;
+      const usage = state.usageBySession[session.id];
+      const usageHint = usage
+        ? ` · 上下文 ${usage.input_tokens.toLocaleString()} tok · 上次回复 ${usage.output_tokens.toLocaleString()} tok`
+        : '';
+      chatSubtitleEl.textContent = `${session.model || '未选择模型'} · ${messages.length ? '持续对话中' : '空会话'}${usageHint}`;
       renderEndpointHint();
 
       if (!messages.length) {
@@ -1283,6 +1288,7 @@
       state.user = null;
       state.sessions = [];
       state.messagesBySession = {};
+      state.usageBySession = {};
       state.activeSessionId = null;
       persistActiveSessionId();
       renderAuthState();
@@ -1448,6 +1454,7 @@
         await api(`/api/sessions/${id}`, { method: 'DELETE' });
         state.sessions = state.sessions.filter((item) => item.id !== id);
         delete state.messagesBySession[id];
+        delete state.usageBySession[id];
         if (state.activeSessionId === id) {
           state.activeSessionId = state.sessions[0]?.id || null;
         }
@@ -1552,8 +1559,14 @@
 
         state.pendingMessage = null;
         upsertSession(payload.session);
+        if (payload.usage) {
+          state.usageBySession[payload.session.id] = payload.usage;
+        }
         setActiveSession(payload.session.id);
-        setStatus(`已连接 ${payload.model} · ${payload.endpoint} · ${payload.upstream}`);
+        const usageMsg = payload.usage
+          ? ` · 输入 ${payload.usage.input_tokens.toLocaleString()} tok · 输出 ${payload.usage.output_tokens.toLocaleString()} tok`
+          : '';
+        setStatus(`已连接 ${payload.model} · ${payload.endpoint} · ${payload.upstream}${usageMsg}`);
       } catch (error) {
         state.pendingMessage = null;
         if (error.status === 401) {
@@ -1579,6 +1592,7 @@
         state.user = null;
         state.sessions = [];
         state.messagesBySession = {};
+        state.usageBySession = {};
         state.activeSessionId = null;
         persistActiveSessionId();
         renderAuthState();

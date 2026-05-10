@@ -178,7 +178,7 @@ async def send_chat(
     model: str,
     messages: Sequence[ChatMessage],
     tools_enabled: bool = True,
-) -> tuple[str, str, str]:
+) -> tuple[str, str, str, dict[str, int]]:
     raw_models, _ = await _fetch_models()
     selected = next((item for item in raw_models if item.get("id") == model), None)
     endpoint = _select_default_endpoint(model, selected.get("supported_endpoints") if selected else None)
@@ -186,20 +186,20 @@ async def send_chat(
     timeout = httpx.Timeout(settings.request_timeout_seconds)
     async with httpx.AsyncClient(timeout=timeout) as client:
         if endpoint == "/v1/responses":
-            upstream, reply = await _send_openai_responses(client, model, messages)
+            upstream, reply, usage = await _send_openai_responses(client, model, messages)
         elif endpoint == "/v1/messages":
-            upstream, reply = await _send_anthropic(client, model, messages, tools_enabled=tools_enabled)
+            upstream, reply, usage = await _send_anthropic(client, model, messages, tools_enabled=tools_enabled)
         else:
             endpoint = "/v1/chat/completions"
-            upstream, reply = await _send_openai_chat_completions(client, model, messages)
-    return endpoint, upstream, reply
+            upstream, reply, usage = await _send_openai_chat_completions(client, model, messages)
+    return endpoint, upstream, reply, usage
 
 
 async def _send_openai_chat_completions(
     client: httpx.AsyncClient,
     model: str,
     messages: Sequence[ChatMessage],
-) -> tuple[str, str]:
+) -> tuple[str, str, dict[str, int]]:
     payload_messages = [{"role": message.role, "content": message.content} for message in messages]
     response, upstream = await _request_with_fallback(
         client,
@@ -214,8 +214,13 @@ async def _send_openai_chat_completions(
     )
     await _raise_for_status(response)
     data = response.json()
+    raw_usage = data.get("usage") or {}
+    usage = {
+        "input_tokens": int(raw_usage.get("prompt_tokens") or 0),
+        "output_tokens": int(raw_usage.get("completion_tokens") or 0),
+    }
     try:
-        return upstream, data["choices"][0]["message"]["content"]
+        return upstream, data["choices"][0]["message"]["content"], usage
     except (KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=502, detail="Invalid OpenAI chat-completions response from proxy") from exc
 
@@ -224,7 +229,7 @@ async def _send_openai_responses(
     client: httpx.AsyncClient,
     model: str,
     messages: Sequence[ChatMessage],
-) -> tuple[str, str]:
+) -> tuple[str, str, dict[str, int]]:
     input_items = [
         {
             "role": message.role,
@@ -248,9 +253,14 @@ async def _send_openai_responses(
     )
     await _raise_for_status(response)
     data = response.json()
+    raw_usage = data.get("usage") or {}
+    usage = {
+        "input_tokens": int(raw_usage.get("input_tokens") or raw_usage.get("prompt_tokens") or 0),
+        "output_tokens": int(raw_usage.get("output_tokens") or raw_usage.get("completion_tokens") or 0),
+    }
     text = _extract_responses_text(data)
     if text:
-        return upstream, text
+        return upstream, text, usage
     raise HTTPException(status_code=502, detail="Invalid OpenAI responses payload from proxy")
 
 
@@ -276,7 +286,7 @@ async def _send_anthropic(
     model: str,
     messages: Sequence[ChatMessage],
     tools_enabled: bool = True,
-) -> tuple[str, str]:
+) -> tuple[str, str, dict[str, int]]:
     anthropic_messages: list[dict] = [
         {"role": message.role, "content": message.content}
         for message in messages
@@ -290,6 +300,8 @@ async def _send_anthropic(
         tools.extend(mcp_registry.anthropic_tools())
 
     upstream_used = ""
+    last_input_tokens = 0
+    cumulative_output_tokens = 0
     for iteration in range(max(1, settings.tool_loop_max_iterations)):
         payload: dict = {
             "model": model,
@@ -310,6 +322,10 @@ async def _send_anthropic(
         upstream_used = upstream
         await _raise_for_status(response)
         data = response.json()
+
+        raw_usage = data.get("usage") or {}
+        last_input_tokens = int(raw_usage.get("input_tokens") or 0)
+        cumulative_output_tokens += int(raw_usage.get("output_tokens") or 0)
 
         try:
             content_blocks = data["content"]
@@ -342,7 +358,8 @@ async def _send_anthropic(
             continue
 
         text_parts = [block["text"] for block in content_blocks if block.get("type") == "text"]
-        return upstream_used, "".join(text_parts).strip()
+        usage = {"input_tokens": last_input_tokens, "output_tokens": cumulative_output_tokens}
+        return upstream_used, "".join(text_parts).strip(), usage
 
     raise HTTPException(
         status_code=502,

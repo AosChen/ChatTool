@@ -58,12 +58,18 @@ class ChatRequest(BaseModel):
     content: str = Field(min_length=1, max_length=40000)
 
 
+class TokenUsage(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
 class ChatResponse(BaseModel):
     model: str
     endpoint: str
     upstream: str
     reply: str
     session: PersistedSession
+    usage: TokenUsage = Field(default_factory=TokenUsage)
 
 
 class ModelInfo(BaseModel):
