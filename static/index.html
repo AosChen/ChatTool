@@ -733,6 +733,8 @@
       user: null,
       models: [],
       sessions: [],
+      messagesBySession: {},
+      loadingMessagesFor: null,
       activeSessionId: localStorage.getItem(ACTIVE_KEY),
       sending: false,
       pendingMessage: null,
@@ -836,6 +838,35 @@
       renderSessionList();
       renderMessages();
       closeSidebar();
+      if (id) {
+        ensureMessagesLoaded(id);
+      }
+    }
+
+    async function ensureMessagesLoaded(sessionId) {
+      if (state.messagesBySession[sessionId] !== undefined) return;
+      if (state.loadingMessagesFor === sessionId) return;
+      state.loadingMessagesFor = sessionId;
+      if (state.activeSessionId === sessionId) renderMessages();
+      try {
+        const payload = await api(`/api/sessions/${sessionId}/messages`);
+        state.messagesBySession[sessionId] = payload.data || [];
+      } catch (error) {
+        if (error.status === 401) {
+          handleUnauthorized();
+          return;
+        }
+        if (error.status === 404) {
+          state.messagesBySession[sessionId] = [];
+        } else {
+          setStatus(error.message);
+        }
+      } finally {
+        if (state.loadingMessagesFor === sessionId) {
+          state.loadingMessagesFor = null;
+        }
+        if (state.activeSessionId === sessionId) renderMessages();
+      }
     }
 
     function syncModelFromSession() {
@@ -863,17 +894,22 @@
     }
 
     function upsertSession(session) {
-      const index = state.sessions.findIndex((item) => item.id === session.id);
+      const { messages, ...meta } = session;
+      if (Array.isArray(messages)) {
+        state.messagesBySession[meta.id] = messages;
+      }
+      const index = state.sessions.findIndex((item) => item.id === meta.id);
       if (index >= 0) {
-        state.sessions[index] = session;
+        state.sessions[index] = meta;
       } else {
-        state.sessions.unshift(session);
+        state.sessions.unshift(meta);
       }
       state.sessions.sort((left, right) => right.updated_at.localeCompare(left.updated_at));
     }
 
     function renderedMessages(session) {
-      const messages = [...session.messages];
+      const cached = state.messagesBySession[session.id];
+      const messages = cached ? [...cached] : [];
       if (state.pendingMessage && state.pendingMessage.sessionId === session.id) {
         messages.push({ role: 'user', content: state.pendingMessage.userText });
         messages.push({ role: 'assistant', content: '正在思考...', pending: true });
@@ -1140,7 +1176,17 @@
       }
 
       chatTitleEl.textContent = session.title;
+      const cacheLoaded = state.messagesBySession[session.id] !== undefined;
       const messages = renderedMessages(session);
+      if (!cacheLoaded && !state.pendingMessage) {
+        chatSubtitleEl.textContent = `${session.model || '未选择模型'} · 加载中...`;
+        renderEndpointHint();
+        const loading = document.createElement('div');
+        loading.className = 'empty';
+        loading.textContent = '正在加载消息...';
+        messagesEl.appendChild(loading);
+        return;
+      }
       chatSubtitleEl.textContent = `${session.model || '未选择模型'} · ${messages.length ? '持续对话中' : '空会话'}`;
       renderEndpointHint();
 
@@ -1238,6 +1284,7 @@
     function handleUnauthorized() {
       state.user = null;
       state.sessions = [];
+      state.messagesBySession = {};
       state.activeSessionId = null;
       persistActiveSessionId();
       renderAuthState();
@@ -1299,7 +1346,11 @@
     async function refreshSessions() {
       const payload = await api('/api/sessions');
       state.sessions = payload.data || [];
-      if (state.activeSessionId && !state.sessions.some((item) => item.id === state.activeSessionId)) {
+      const validIds = new Set(state.sessions.map((item) => item.id));
+      for (const id of Object.keys(state.messagesBySession)) {
+        if (!validIds.has(id)) delete state.messagesBySession[id];
+      }
+      if (state.activeSessionId && !validIds.has(state.activeSessionId)) {
         state.activeSessionId = null;
       }
       if (!state.activeSessionId && state.sessions.length) {
@@ -1309,6 +1360,9 @@
       renderSessionList();
       syncModelFromSession();
       renderMessages();
+      if (state.activeSessionId) {
+        ensureMessagesLoaded(state.activeSessionId);
+      }
     }
 
     async function bootstrapChat() {
@@ -1395,6 +1449,7 @@
       try {
         await api(`/api/sessions/${id}`, { method: 'DELETE' });
         state.sessions = state.sessions.filter((item) => item.id !== id);
+        delete state.messagesBySession[id];
         if (state.activeSessionId === id) {
           state.activeSessionId = state.sessions[0]?.id || null;
         }
@@ -1507,10 +1562,7 @@
           handleUnauthorized();
           return;
         }
-        try {
-          await refreshSessions();
-        } catch {
-        }
+        renderMessages();
         setStatus(error.message);
       } finally {
         setSending(false);
@@ -1528,6 +1580,7 @@
       } finally {
         state.user = null;
         state.sessions = [];
+        state.messagesBySession = {};
         state.activeSessionId = null;
         persistActiveSessionId();
         renderAuthState();

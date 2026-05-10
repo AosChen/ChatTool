@@ -20,18 +20,25 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1)
 
 
-class PersistedSession(BaseModel):
+class SessionMeta(BaseModel):
     id: str
     title: str
     model: str
     created_at: str
     updated_at: str
     tools_enabled: bool = True
+
+
+class PersistedSession(SessionMeta):
     messages: list[ChatMessage] = Field(default_factory=list)
 
 
 class SessionsResponse(BaseModel):
-    data: list[PersistedSession]
+    data: list[SessionMeta]
+
+
+class MessagesResponse(BaseModel):
+    data: list[ChatMessage]
 
 
 class CreateSessionRequest(BaseModel):

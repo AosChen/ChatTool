@@ -17,6 +17,7 @@ from app.models import (
     ChatRequest,
     ChatResponse,
     CreateSessionRequest,
+    MessagesResponse,
     ModelsResponse,
     PersistedSession,
     SessionsResponse,
@@ -164,6 +165,15 @@ async def get_sessions(
     storage: ChatStorage = Depends(storage_dep),
 ) -> SessionsResponse:
     return SessionsResponse(data=storage.list_sessions(user.id))
+
+
+@app.get("/api/sessions/{session_id}/messages", response_model=MessagesResponse)
+async def get_session_messages(
+    session_id: str,
+    user: UserPublic = Depends(require_current_user),
+    storage: ChatStorage = Depends(storage_dep),
+) -> MessagesResponse:
+    return MessagesResponse(data=storage.list_messages(user.id, session_id))
 
 
 @app.post("/api/sessions", response_model=PersistedSession, status_code=status.HTTP_201_CREATED)

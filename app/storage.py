@@ -6,7 +6,6 @@ import os
 import secrets
 import sqlite3
 import uuid
-from collections import defaultdict
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,7 +13,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import HTTPException
 
-from app.models import ChatMessage, PersistedSession, UserPublic
+from app.models import ChatMessage, PersistedSession, SessionMeta, UserPublic
 
 _ENC_PREFIX = "ENC:"
 
@@ -241,7 +240,7 @@ class ChatStorage:
             connection.execute("DELETE FROM auth_sessions WHERE id = ?", (session_id,))
             connection.commit()
 
-    def list_sessions(self, user_id: str) -> list[PersistedSession]:
+    def list_sessions(self, user_id: str) -> list[SessionMeta]:
         with self.connect() as connection:
             session_rows = connection.execute(
                 """
@@ -252,26 +251,40 @@ class ChatStorage:
                 """,
                 (user_id,),
             ).fetchall()
-            if not session_rows:
-                return []
 
-            session_ids = [row["id"] for row in session_rows]
-            placeholders = ", ".join("?" for _ in session_ids)
+        return [
+            SessionMeta(
+                id=row["id"],
+                title=row["title"],
+                model=row["model"],
+                created_at=row["created_at"],
+                updated_at=row["updated_at"],
+                tools_enabled=bool(row["tools_enabled"]),
+            )
+            for row in session_rows
+        ]
+
+    def list_messages(self, user_id: str, session_id: str) -> list[ChatMessage]:
+        with self.connect() as connection:
+            owner_row = connection.execute(
+                "SELECT 1 FROM chat_sessions WHERE id = ? AND user_id = ?",
+                (session_id, user_id),
+            ).fetchone()
+            if owner_row is None:
+                raise HTTPException(status_code=404, detail="Session not found")
             message_rows = connection.execute(
-                f"""
-                SELECT session_id, role, content, id
+                """
+                SELECT role, content
                 FROM chat_messages
-                WHERE session_id IN ({placeholders})
+                WHERE session_id = ?
                 ORDER BY id ASC
                 """,
-                session_ids,
+                (session_id,),
             ).fetchall()
-
-        messages_by_session: dict[str, list[sqlite3.Row]] = defaultdict(list)
-        for row in message_rows:
-            messages_by_session[row["session_id"]].append(row)
-
-        return [self._session_from_row(row, messages_by_session[row["id"]]) for row in session_rows]
+        return [
+            ChatMessage(role=row["role"], content=_decrypt(row["content"], self._aes_key))
+            for row in message_rows
+        ]
 
     def get_session(self, user_id: str, session_id: str) -> PersistedSession:
         with self.connect() as connection:
