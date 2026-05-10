@@ -1188,7 +1188,13 @@
       }
       const usage = state.usageBySession[session.id];
       const usageHint = usage
-        ? ` · 上下文 ${usage.input_tokens.toLocaleString()} tok · 上次回复 ${usage.output_tokens.toLocaleString()} tok`
+        ? ` · 上下文 ${usage.input_tokens.toLocaleString()} tok · 上次回复 ${usage.output_tokens.toLocaleString()} tok` +
+          (usage.cache_read_input_tokens
+            ? ` · 缓存命中 ${usage.cache_read_input_tokens.toLocaleString()}`
+            : '') +
+          (usage.cache_creation_input_tokens
+            ? ` · 缓存写入 ${usage.cache_creation_input_tokens.toLocaleString()}`
+            : '')
         : '';
       chatSubtitleEl.textContent = `${session.model || '未选择模型'} · ${messages.length ? '持续对话中' : '空会话'}${usageHint}`;
       renderEndpointHint();

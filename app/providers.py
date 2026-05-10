@@ -281,6 +281,19 @@ def _extract_responses_text(data: dict) -> str:
     return "".join(collected).strip()
 
 
+def _mark_cache_breakpoint(message: dict) -> dict:
+    """Return a copy of an Anthropic message with cache_control on its last content block."""
+    content = message.get("content")
+    if isinstance(content, str):
+        new_content = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+    elif isinstance(content, list) and content:
+        new_content = [dict(block) for block in content]
+        new_content[-1] = {**new_content[-1], "cache_control": {"type": "ephemeral"}}
+    else:
+        return message
+    return {**message, "content": new_content}
+
+
 async def _send_anthropic(
     client: httpx.AsyncClient,
     model: str,
@@ -299,14 +312,29 @@ async def _send_anthropic(
             tools.extend(_LOCAL_TOOL_DEFINITIONS)
         tools.extend(mcp_registry.anthropic_tools())
 
+    beta_flags: list[str] = []
+    if settings.anthropic_enable_1m_context:
+        beta_flags.append("context-1m-2025-08-07")
+    if settings.anthropic_enable_prompt_cache:
+        beta_flags.append("prompt-caching-2024-07-31")
+    extra_headers = {"anthropic-version": "2023-06-01"}
+    if beta_flags:
+        extra_headers["anthropic-beta"] = ",".join(beta_flags)
+
     upstream_used = ""
     last_input_tokens = 0
     cumulative_output_tokens = 0
+    last_cache_creation = 0
+    last_cache_read = 0
     for iteration in range(max(1, settings.tool_loop_max_iterations)):
+        outgoing_messages = list(anthropic_messages)
+        if settings.anthropic_enable_prompt_cache and outgoing_messages:
+            outgoing_messages[-1] = _mark_cache_breakpoint(outgoing_messages[-1])
+
         payload: dict = {
             "model": model,
-            "messages": anthropic_messages,
-            "max_tokens": 4096,
+            "messages": outgoing_messages,
+            "max_tokens": settings.anthropic_max_tokens,
         }
         if tools:
             payload["tools"] = tools
@@ -316,7 +344,7 @@ async def _send_anthropic(
             "POST",
             settings.endpoint_base_url_candidates("anthropic"),
             "/v1/messages",
-            headers=_headers({"anthropic-version": "2023-06-01"}),
+            headers=_headers(extra_headers),
             json=payload,
         )
         upstream_used = upstream
@@ -326,6 +354,8 @@ async def _send_anthropic(
         raw_usage = data.get("usage") or {}
         last_input_tokens = int(raw_usage.get("input_tokens") or 0)
         cumulative_output_tokens += int(raw_usage.get("output_tokens") or 0)
+        last_cache_creation = int(raw_usage.get("cache_creation_input_tokens") or 0)
+        last_cache_read = int(raw_usage.get("cache_read_input_tokens") or 0)
 
         try:
             content_blocks = data["content"]
@@ -358,7 +388,12 @@ async def _send_anthropic(
             continue
 
         text_parts = [block["text"] for block in content_blocks if block.get("type") == "text"]
-        usage = {"input_tokens": last_input_tokens, "output_tokens": cumulative_output_tokens}
+        usage = {
+            "input_tokens": last_input_tokens,
+            "output_tokens": cumulative_output_tokens,
+            "cache_creation_input_tokens": last_cache_creation,
+            "cache_read_input_tokens": last_cache_read,
+        }
         return upstream_used, "".join(text_parts).strip(), usage
 
     raise HTTPException(

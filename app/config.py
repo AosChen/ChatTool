@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     enable_local_tools: bool = True
     tool_loop_max_iterations: int = 8
 
+    anthropic_max_tokens: int = 16000
+    anthropic_enable_1m_context: bool = True
+    anthropic_enable_prompt_cache: bool = True
+
     mcp_servers_config_path: str = "./mcp_servers.json"
     brave_api_key: str | None = None
     tavily_api_key: str | None = None
