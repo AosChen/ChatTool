@@ -1076,18 +1076,24 @@
         const paragraphLines = [];
         while (index < lines.length && lines[index].trim()) {
           if (
-            lines[index].match(/^```/) ||
-            lines[index].match(/^(#{1,6})\s+/) ||
-            lines[index].match(/^>\s?/) ||
-            lines[index].match(/^[-*+]\s+/) ||
-            lines[index].match(/^\d+\.\s+/)
+            paragraphLines.length > 0 && (
+              lines[index].match(/^```/) ||
+              lines[index].match(/^(#{1,6})\s+/) ||
+              lines[index].match(/^>\s?/) ||
+              lines[index].match(/^[-*+]\s+/) ||
+              lines[index].match(/^\d+\.\s+/)
+            )
           ) {
             break;
           }
           paragraphLines.push(lines[index]);
           index += 1;
         }
-        blocks.push(`<p>${paragraphLines.map(renderInlineMarkdown).join('<br>')}</p>`);
+        if (paragraphLines.length) {
+          blocks.push(`<p>${paragraphLines.map(renderInlineMarkdown).join('<br>')}</p>`);
+        } else {
+          index += 1;
+        }
       }
 
       return blocks.join('');
