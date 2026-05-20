@@ -349,6 +349,23 @@
       font-style: italic;
     }
 
+    .message.notice {
+      align-self: center;
+      max-width: min(90%, 600px);
+      background: rgba(255,255,255,0.04);
+      border: 1px dashed rgba(255,255,255,0.18);
+      color: #b9c0d8;
+      font-size: 13px;
+      text-align: center;
+      padding: 10px 14px;
+      white-space: pre-wrap;
+    }
+
+    .message.notice.error {
+      color: #ff9a9a;
+      border-color: rgba(255,120,120,0.45);
+    }
+
     .message.assistant > :first-child {
       margin-top: 0;
     }
@@ -1377,6 +1394,17 @@
       toolsToggleEl.disabled = sending || !getActiveSession();
       newChatBtnEl.disabled = sending;
       logoutBtnEl.disabled = sending;
+      compactBtnEl.disabled = sending;
+      loadCompactBtnEl.disabled = sending;
+    }
+
+    function appendNotice(sessionId, text, kind) {
+      if (state.activeSessionId !== sessionId) return;
+      const div = document.createElement('div');
+      div.className = 'message notice' + (kind === 'error' ? ' error' : '');
+      div.textContent = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
     }
 
     async function api(path, options = {}) {
@@ -1761,18 +1789,22 @@
       }
       const confirmed = window.confirm('将当前会话总结并加密保存为一个快照？\n\n这会发起一次模型调用，原会话不会被改动。');
       if (!confirmed) return;
-      compactBtnEl.disabled = true;
+      const sessionId = state.activeSessionId;
+      setSending(true);
       setStatus('正在压缩当前会话...');
+      appendNotice(sessionId, '正在压缩会话，请稍候…');
       try {
-        const payload = await api(`/api/sessions/${state.activeSessionId}/compact`, {
+        const payload = await api(`/api/sessions/${sessionId}/compact`, {
           method: 'POST',
         });
         setStatus(`已保存快照：${payload.compact.title}`);
+        appendNotice(sessionId, `✅ 已保存快照：${payload.compact.title}`);
       } catch (error) {
         if (error.status === 401) { handleUnauthorized(); return; }
         setStatus('压缩失败：' + error.message);
+        appendNotice(sessionId, '❌ 压缩失败：' + error.message, 'error');
       } finally {
-        compactBtnEl.disabled = false;
+        setSending(false);
       }
     }
 
