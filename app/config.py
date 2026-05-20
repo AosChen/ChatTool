@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     brave_api_key: str | None = None
     tavily_api_key: str | None = None
 
+    compacts_dir: str = "./data/compacts"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

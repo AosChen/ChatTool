@@ -14,8 +14,12 @@ from app.config import PublicConfig, settings
 from app.models import (
     AuthRequest,
     AuthResponse,
+    ChatMessage,
     ChatRequest,
     ChatResponse,
+    CompactCreateResponse,
+    CompactLoadResponse,
+    CompactsResponse,
     CreateSessionRequest,
     MessagesResponse,
     ModelsResponse,
@@ -36,7 +40,7 @@ app = FastAPI(title=settings.app_name)
 
 
 def storage_dep() -> ChatStorage:
-    return get_storage(settings.database_path, settings.message_encryption_key)
+    return get_storage(settings.database_path, settings.message_encryption_key, settings.compacts_dir)
 
 
 def set_auth_cookie(response: Response, auth_session_id: str) -> None:
@@ -76,7 +80,7 @@ def require_current_user(user: UserPublic | None = Depends(current_user_optional
 
 @app.on_event("startup")
 async def startup() -> None:
-    get_storage(settings.database_path, settings.message_encryption_key)
+    get_storage(settings.database_path, settings.message_encryption_key, settings.compacts_dir)
     if settings.brave_api_key:
         os.environ.setdefault("BRAVE_API_KEY", settings.brave_api_key)
     if settings.tavily_api_key:
@@ -245,6 +249,121 @@ async def chat(
         session=session,
         usage=TokenUsage(**usage),
     )
+
+
+COMPACT_SUMMARY_PROMPT = """请将我们到目前为止的对话压缩成一份「会话快照」，目的是让另一个新会话能够基于这份快照无缝继续工作。按以下结构输出 Markdown：
+
+## 背景与目标
+（用户在做什么、为什么）
+
+## 关键决策
+- 决策内容｜原因｜对后续的影响
+
+## 涉及文件 / 代码
+- 路径：作用；必要的关键片段原样保留（不要复述含义）
+
+## 当前状态
+（已完成 / 进行中 / 待办）
+
+## 未解决的问题
+（需要后续会话回答或确认的点）
+
+## 用户偏好与约束
+（语气、技术栈选择、需要避免的做法）
+
+要求：
+- 信息保真优先于篇幅，但不要复述对话原文
+- 用户原话里关键的需求/约束尽量原样引用
+- 不要包含寒暄、过程性表达
+- 直接输出快照内容，不要加额外的开场或结尾说明"""
+
+
+COMPACT_LOAD_TEMPLATE = """以下是从之前会话加载的快照，请阅读并在脑海里建立完整的上下文，然后用一两句确认你理解了主线和待办，等待我的下一步指令。不要复述快照内容。
+
+---快照开始---
+{content}
+---快照结束---"""
+
+
+@app.post("/api/sessions/{session_id}/compact", response_model=CompactCreateResponse)
+async def create_compact(
+    session_id: str,
+    user: UserPublic = Depends(require_current_user),
+    storage: ChatStorage = Depends(storage_dep),
+) -> CompactCreateResponse:
+    session = storage.get_session(user.id, session_id)
+    if not session.messages:
+        raise HTTPException(status_code=400, detail="会话为空，无法压缩")
+
+    summary_messages = list(session.messages) + [
+        ChatMessage(role="user", content=COMPACT_SUMMARY_PROMPT)
+    ]
+    model = session.model or settings.default_model
+    _, _, reply, _ = await send_chat(
+        model=model,
+        messages=summary_messages,
+        tools_enabled=False,
+    )
+    summary = reply.strip()
+    if not summary:
+        raise HTTPException(status_code=502, detail="上游未返回总结内容")
+
+    title = session.title or "未命名快照"
+    compact = storage.create_compact(
+        user_id=user.id,
+        title=title,
+        plaintext=summary,
+        source_session_id=session.id,
+    )
+    preview = summary[:280]
+    return CompactCreateResponse(compact=compact, summary_preview=preview)
+
+
+@app.get("/api/compacts", response_model=CompactsResponse)
+async def list_compacts(
+    user: UserPublic = Depends(require_current_user),
+    storage: ChatStorage = Depends(storage_dep),
+) -> CompactsResponse:
+    return CompactsResponse(data=storage.list_compacts(user.id))
+
+
+@app.post("/api/compacts/{compact_id}/load", response_model=CompactLoadResponse)
+async def load_compact(
+    compact_id: str,
+    user: UserPublic = Depends(require_current_user),
+    storage: ChatStorage = Depends(storage_dep),
+) -> CompactLoadResponse:
+    meta, plaintext = storage.load_compact_plaintext(user.id, compact_id)
+    title = f"[继承] {meta.title}"
+    new_session = storage.create_session(
+        user.id,
+        title=title[:120],
+        model=settings.default_model,
+        tools_enabled=True,
+    )
+    bootstrap = COMPACT_LOAD_TEMPLATE.format(content=plaintext)
+    new_session = storage.append_message(user.id, new_session.id, "user", bootstrap)
+    try:
+        _, _, reply, _ = await send_chat(
+            model=new_session.model or settings.default_model,
+            messages=new_session.messages,
+            tools_enabled=False,
+        )
+        confirmation = (reply or "").strip() or "已加载快照，请告诉我下一步。"
+    except Exception:  # noqa: BLE001
+        confirmation = "已加载快照，请告诉我下一步。"
+    new_session = storage.append_message(user.id, new_session.id, "assistant", confirmation)
+    return CompactLoadResponse(session=new_session, compact=meta)
+
+
+@app.delete("/api/compacts/{compact_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_compact(
+    compact_id: str,
+    user: UserPublic = Depends(require_current_user),
+    storage: ChatStorage = Depends(storage_dep),
+) -> Response:
+    storage.delete_compact(user.id, compact_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @app.get("/")

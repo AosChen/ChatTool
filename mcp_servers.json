@@ -17,6 +17,10 @@
     "fetch": {
       "command": "python3",
       "args": ["-m", "mcp_server_fetch"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./data/notes"]
     }
   }
 }

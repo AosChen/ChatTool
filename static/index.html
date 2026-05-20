@@ -492,6 +492,122 @@
       height: 52px;
     }
 
+    .composer-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .composer-action {
+      background: rgba(255,255,255,0.05);
+      color: #d6dcff;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .composer-action:hover:not(:disabled) {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+    }
+
+    .modal {
+      background: #1c1f2e;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      width: min(560px, 92vw);
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .modal-close {
+      background: transparent;
+      color: #d6dcff;
+      border: none;
+      font-size: 22px;
+      cursor: pointer;
+    }
+
+    .modal-body {
+      padding: 12px 18px 18px;
+      overflow-y: auto;
+    }
+
+    .compact-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 8px;
+      margin-bottom: 8px;
+    }
+
+    .compact-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .compact-item-title {
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .compact-item-meta {
+      font-size: 12px;
+      color: #8b91a8;
+      margin-top: 2px;
+    }
+
+    .compact-item-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .compact-item-actions button {
+      background: rgba(255,255,255,0.05);
+      color: #d6dcff;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .compact-item-actions button.danger {
+      color: #ff8a8a;
+    }
+
     .send:disabled,
     .new-chat:disabled,
     .logout:disabled,
@@ -709,12 +825,28 @@
       </section>
 
       <div class="composer">
+        <div class="composer-actions">
+          <button type="button" class="composer-action" id="compactBtn" title="把当前会话总结并加密保存为一个快照文件">📝 压缩并保存</button>
+          <button type="button" class="composer-action" id="loadCompactBtn" title="加载一个已保存的快照到新会话">📂 加载快照</button>
+        </div>
         <div class="composer-grid">
           <textarea id="prompt" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
           <button class="send" id="sendBtn">发送</button>
         </div>
       </div>
     </main>
+  </div>
+
+  <div class="modal-backdrop" id="compactModal" hidden>
+    <div class="modal">
+      <div class="modal-header">
+        <h3>加载快照到新会话</h3>
+        <button class="modal-close" id="compactModalCloseBtn" title="关闭">&times;</button>
+      </div>
+      <div class="modal-body" id="compactList">
+        <div class="meta">加载中...</div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -758,6 +890,11 @@
     const emptyStateEl = document.getElementById('emptyState');
     const promptEl = document.getElementById('prompt');
     const sendBtnEl = document.getElementById('sendBtn');
+    const compactBtnEl = document.getElementById('compactBtn');
+    const loadCompactBtnEl = document.getElementById('loadCompactBtn');
+    const compactModalEl = document.getElementById('compactModal');
+    const compactModalCloseBtnEl = document.getElementById('compactModalCloseBtn');
+    const compactListEl = document.getElementById('compactList');
     const newChatBtnEl = document.getElementById('newChatBtn');
     const sidebarEl = document.getElementById('sidebar');
     const sidebarBackdropEl = document.getElementById('sidebarBackdrop');
@@ -1609,12 +1746,137 @@
       }
     }
 
+    async function compactCurrentSession() {
+      if (!state.activeSessionId) {
+        setStatus('请先选择一个会话');
+        return;
+      }
+      if (state.sending) {
+        setStatus('正在发送中，请稍候');
+        return;
+      }
+      const confirmed = window.confirm('将当前会话总结并加密保存为一个快照？\n\n这会发起一次模型调用，原会话不会被改动。');
+      if (!confirmed) return;
+      compactBtnEl.disabled = true;
+      setStatus('正在压缩当前会话...');
+      try {
+        const payload = await api(`/api/sessions/${state.activeSessionId}/compact`, {
+          method: 'POST',
+        });
+        setStatus(`已保存快照：${payload.compact.title}`);
+      } catch (error) {
+        if (error.status === 401) { handleUnauthorized(); return; }
+        setStatus('压缩失败：' + error.message);
+      } finally {
+        compactBtnEl.disabled = false;
+      }
+    }
+
+    function formatBytes(n) {
+      if (n < 1024) return `${n} B`;
+      if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+      return `${(n / 1024 / 1024).toFixed(2)} MB`;
+    }
+
+    function formatCreatedAt(iso) {
+      try { return new Date(iso).toLocaleString(); } catch { return iso; }
+    }
+
+    function renderCompactList(items) {
+      if (!items.length) {
+        compactListEl.innerHTML = '<div class="meta">还没有任何快照。先在某个会话里点「压缩并保存」。</div>';
+        return;
+      }
+      compactListEl.innerHTML = '';
+      for (const item of items) {
+        const row = document.createElement('div');
+        row.className = 'compact-item';
+        const info = document.createElement('div');
+        info.className = 'compact-item-info';
+        const title = document.createElement('div');
+        title.className = 'compact-item-title';
+        title.textContent = item.title;
+        const meta = document.createElement('div');
+        meta.className = 'compact-item-meta';
+        meta.textContent = `${formatCreatedAt(item.created_at)} · ${formatBytes(item.byte_size)}`;
+        info.appendChild(title);
+        info.appendChild(meta);
+
+        const actions = document.createElement('div');
+        actions.className = 'compact-item-actions';
+        const loadBtn = document.createElement('button');
+        loadBtn.textContent = '加载到新会话';
+        loadBtn.addEventListener('click', () => loadCompactToNewSession(item.id));
+        const delBtn = document.createElement('button');
+        delBtn.className = 'danger';
+        delBtn.textContent = '删除';
+        delBtn.addEventListener('click', () => deleteCompact(item.id));
+        actions.appendChild(loadBtn);
+        actions.appendChild(delBtn);
+
+        row.appendChild(info);
+        row.appendChild(actions);
+        compactListEl.appendChild(row);
+      }
+    }
+
+    async function openCompactModal() {
+      compactModalEl.hidden = false;
+      compactListEl.innerHTML = '<div class="meta">加载中...</div>';
+      try {
+        const payload = await api('/api/compacts');
+        renderCompactList(payload.data || []);
+      } catch (error) {
+        if (error.status === 401) { handleUnauthorized(); return; }
+        compactListEl.innerHTML = `<div class="meta">加载失败：${error.message}</div>`;
+      }
+    }
+
+    function closeCompactModal() {
+      compactModalEl.hidden = true;
+    }
+
+    async function loadCompactToNewSession(compactId) {
+      setStatus('正在加载快照并创建新会话...');
+      try {
+        const payload = await api(`/api/compacts/${compactId}/load`, { method: 'POST' });
+        const session = payload.session;
+        upsertSession(session);
+        state.messagesBySession[session.id] = session.messages || [];
+        setActiveSession(session.id);
+        renderSessionList();
+        renderMessages();
+        closeCompactModal();
+        setStatus('已加载快照，可以继续对话');
+      } catch (error) {
+        if (error.status === 401) { handleUnauthorized(); return; }
+        setStatus('加载失败：' + error.message);
+      }
+    }
+
+    async function deleteCompact(compactId) {
+      if (!window.confirm('确定删除这个快照？删除后无法恢复。')) return;
+      try {
+        await api(`/api/compacts/${compactId}`, { method: 'DELETE' });
+        await openCompactModal();
+      } catch (error) {
+        if (error.status === 401) { handleUnauthorized(); return; }
+        setStatus('删除失败：' + error.message);
+      }
+    }
+
     menuToggleBtnEl.addEventListener('click', openSidebar);
     sidebarCloseBtnEl.addEventListener('click', closeSidebar);
     sidebarBackdropEl.addEventListener('click', closeSidebar);
     loginBtnEl.addEventListener('click', () => submitAuth('login'));
     registerBtnEl.addEventListener('click', () => submitAuth('register'));
     logoutBtnEl.addEventListener('click', logout);
+    compactBtnEl.addEventListener('click', compactCurrentSession);
+    loadCompactBtnEl.addEventListener('click', openCompactModal);
+    compactModalCloseBtnEl.addEventListener('click', closeCompactModal);
+    compactModalEl.addEventListener('click', (event) => {
+      if (event.target === compactModalEl) closeCompactModal();
+    });
     newChatBtnEl.addEventListener('click', async () => {
       try {
         await createSession();
@@ -1631,7 +1893,7 @@
     toolsToggleEl.addEventListener('change', updateSessionToolsEnabled);
     sendBtnEl.addEventListener('click', sendMessage);
     promptEl.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' && !event.shiftKey) {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
         event.preventDefault();
         sendMessage();
       }

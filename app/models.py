@@ -84,3 +84,25 @@ class ModelInfo(BaseModel):
 
 class ModelsResponse(BaseModel):
     data: list[ModelInfo]
+
+
+class CompactMeta(BaseModel):
+    id: str
+    title: str
+    source_session_id: str | None = None
+    created_at: str
+    byte_size: int
+
+
+class CompactsResponse(BaseModel):
+    data: list[CompactMeta]
+
+
+class CompactCreateResponse(BaseModel):
+    compact: CompactMeta
+    summary_preview: str
+
+
+class CompactLoadResponse(BaseModel):
+    session: "PersistedSession"
+    compact: CompactMeta

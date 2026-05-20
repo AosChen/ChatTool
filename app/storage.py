@@ -11,9 +11,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
 from fastapi import HTTPException
 
-from app.models import ChatMessage, PersistedSession, SessionMeta, UserPublic
+from app.models import ChatMessage, CompactMeta, PersistedSession, SessionMeta, UserPublic
 
 _ENC_PREFIX = "ENC:"
 
@@ -47,9 +49,16 @@ def utc_now_iso() -> str:
 
 
 class ChatStorage:
-    def __init__(self, database_path: str, encryption_key: str | None = None) -> None:
+    def __init__(
+        self,
+        database_path: str,
+        encryption_key: str | None = None,
+        compacts_dir: str | None = None,
+    ) -> None:
         self.database_path = Path(database_path)
         self._aes_key = _derive_aes_key(encryption_key) if encryption_key else None
+        self._master_secret = encryption_key.encode("utf-8") if encryption_key else None
+        self.compacts_dir = Path(compacts_dir) if compacts_dir else Path("./data/compacts")
 
     @contextmanager
     def connect(self) -> sqlite3.Connection:
@@ -112,6 +121,20 @@ class ChatStorage:
 
                 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id
                     ON chat_messages(session_id, id ASC);
+
+                CREATE TABLE IF NOT EXISTS compacts (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT NOT NULL,
+                    source_session_id TEXT,
+                    title TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    byte_size INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_compacts_user_created
+                    ON compacts(user_id, created_at DESC);
                 """
             )
 
@@ -404,15 +427,139 @@ class ChatStorage:
 
         return self.get_session(user_id, session_id)
 
+    def _derive_user_compact_key(self, user_id: str) -> bytes:
+        if self._master_secret is None:
+            raise HTTPException(
+                status_code=500,
+                detail="MESSAGE_ENCRYPTION_KEY is not configured; compact encryption requires it",
+            )
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=user_id.encode("utf-8"),
+            info=b"chattool-compact-v1",
+        )
+        return hkdf.derive(self._master_secret)
+
+    def _compact_dir_for(self, user_id: str) -> Path:
+        path = self.compacts_dir / user_id
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def create_compact(
+        self,
+        user_id: str,
+        title: str,
+        plaintext: str,
+        source_session_id: str | None,
+    ) -> CompactMeta:
+        key = self._derive_user_compact_key(user_id)
+        nonce = os.urandom(12)
+        ciphertext = AESGCM(key).encrypt(nonce, plaintext.encode("utf-8"), None)
+        blob = nonce + ciphertext
+
+        compact_id = str(uuid.uuid4())
+        file_path = self._compact_dir_for(user_id) / f"{compact_id}.enc"
+        file_path.write_bytes(blob)
+
+        created_at = utc_now_iso()
+        byte_size = len(blob)
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO compacts (id, user_id, source_session_id, title, file_path, byte_size, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (compact_id, user_id, source_session_id, title, str(file_path), byte_size, created_at),
+            )
+            connection.commit()
+
+        return CompactMeta(
+            id=compact_id,
+            title=title,
+            source_session_id=source_session_id,
+            created_at=created_at,
+            byte_size=byte_size,
+        )
+
+    def list_compacts(self, user_id: str) -> list[CompactMeta]:
+        with self.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, title, source_session_id, created_at, byte_size
+                FROM compacts
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        return [
+            CompactMeta(
+                id=row["id"],
+                title=row["title"],
+                source_session_id=row["source_session_id"],
+                created_at=row["created_at"],
+                byte_size=row["byte_size"],
+            )
+            for row in rows
+        ]
+
+    def _get_compact_row(self, user_id: str, compact_id: str) -> sqlite3.Row:
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id, title, source_session_id, file_path, byte_size, created_at
+                FROM compacts
+                WHERE id = ? AND user_id = ?
+                """,
+                (compact_id, user_id),
+            ).fetchone()
+        if row is None:
+            raise HTTPException(status_code=404, detail="Compact not found")
+        return row
+
+    def load_compact_plaintext(self, user_id: str, compact_id: str) -> tuple[CompactMeta, str]:
+        row = self._get_compact_row(user_id, compact_id)
+        blob = Path(row["file_path"]).read_bytes()
+        nonce, ciphertext = blob[:12], blob[12:]
+        key = self._derive_user_compact_key(user_id)
+        plaintext = AESGCM(key).decrypt(nonce, ciphertext, None).decode("utf-8")
+        meta = CompactMeta(
+            id=row["id"],
+            title=row["title"],
+            source_session_id=row["source_session_id"],
+            created_at=row["created_at"],
+            byte_size=row["byte_size"],
+        )
+        return meta, plaintext
+
+    def delete_compact(self, user_id: str, compact_id: str) -> None:
+        row = self._get_compact_row(user_id, compact_id)
+        file_path = Path(row["file_path"])
+        with self.connect() as connection:
+            connection.execute(
+                "DELETE FROM compacts WHERE id = ? AND user_id = ?",
+                (compact_id, user_id),
+            )
+            connection.commit()
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
 
 storage: ChatStorage | None = None
 
 
-def get_storage(database_path: str | None = None, encryption_key: str | None = None) -> ChatStorage:
+def get_storage(
+    database_path: str | None = None,
+    encryption_key: str | None = None,
+    compacts_dir: str | None = None,
+) -> ChatStorage:
     global storage
     if storage is None:
         if database_path is None:
             raise RuntimeError("Storage is not initialized")
-        storage = ChatStorage(database_path, encryption_key)
+        storage = ChatStorage(database_path, encryption_key, compacts_dir)
         storage.initialize()
     return storage
